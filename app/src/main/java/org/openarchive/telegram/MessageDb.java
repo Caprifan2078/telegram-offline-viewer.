@@ -12,12 +12,13 @@ import java.util.Locale;
 /** Private offline index: messages + media references; never stores copies of media bytes. */
 class MessageDb extends SQLiteOpenHelper {
     static final class Item {
-        long id; String author,date,body,media,mediaType; boolean favorite;
+        long id; String author,date,body,media,mediaType; boolean favorite,pinned;
     }
     static final class Attachment {
         long id,messageId; String path,kind,author,date,body;
     }
-    MessageDb(Context ctx){super(ctx,"telegram_archive.db",null,5);}
+    MessageDb(Context ctx){this(ctx,"telegram_archive.db");}
+    MessageDb(Context ctx,String databaseName){super(ctx,databaseName,null,6);}
     @Override public void onConfigure(SQLiteDatabase d){super.onConfigure(d);d.enableWriteAheadLogging();}
     @Override public void onCreate(SQLiteDatabase d){
         d.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY,author TEXT,date_text TEXT,body TEXT,media TEXT,media_type TEXT,body_fold TEXT,author_fold TEXT)");
@@ -25,6 +26,7 @@ class MessageDb extends SQLiteOpenHelper {
         d.execSQL("CREATE VIRTUAL TABLE messages_fts USING fts4(author,body,date_text,content='messages',tokenize=unicode61)");
         mediaTables(d);
         d.execSQL("CREATE TABLE favorites (message_id INTEGER PRIMARY KEY)");
+        d.execSQL("CREATE TABLE pins (message_id INTEGER PRIMARY KEY, pinned_at INTEGER NOT NULL)");
     }
     private void mediaTables(SQLiteDatabase d){
         d.execSQL("CREATE TABLE IF NOT EXISTS attachments (id INTEGER PRIMARY KEY,message_id INTEGER NOT NULL,path TEXT NOT NULL,kind TEXT NOT NULL)");
@@ -51,6 +53,7 @@ class MessageDb extends SQLiteOpenHelper {
             // Existing data stays readable; a successful re-import populates Unicode casefold columns.
 
         }
+        if(old<6){d.execSQL("CREATE TABLE IF NOT EXISTS pins (message_id INTEGER PRIMARY KEY,pinned_at INTEGER NOT NULL)");}
     }
     private static String fold(String s){return (s==null?"":s).toLowerCase(Locale.ROOT);}
     void clearStage(SQLiteDatabase d){d.delete("staged_attachments",null,null);d.delete("staged_messages",null,null);}
@@ -70,6 +73,7 @@ class MessageDb extends SQLiteOpenHelper {
             d.execSQL("INSERT INTO messages(id,author,date_text,body,media,media_type,body_fold,author_fold) SELECT id,author,date_text,body,media,media_type,body_fold,author_fold FROM staged_messages ORDER BY id");
             d.execSQL("INSERT INTO attachments(message_id,path,kind) SELECT message_id,path,kind FROM staged_attachments ORDER BY id");
             d.execSQL("DELETE FROM favorites WHERE message_id NOT IN (SELECT id FROM messages)");
+            d.execSQL("DELETE FROM pins WHERE message_id NOT IN (SELECT id FROM messages)");
             d.execSQL("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')");
             clearStage(d);d.setTransactionSuccessful();
         }finally{d.endTransaction();}
@@ -103,11 +107,12 @@ class MessageDb extends SQLiteOpenHelper {
     List<Item> page(int offset,int limit,String q,boolean deep,String author,boolean onlyMedia,boolean favorites){
         Filter f=condition(q,deep,author,onlyMedia,favorites);ArrayList<Item> list=new ArrayList<>();
         String sql="SELECT id,author,date_text,body,media,media_type,"+
-                "EXISTS(SELECT 1 FROM favorites WHERE message_id=messages.id) FROM messages"+f.clause+
+                "EXISTS(SELECT 1 FROM favorites WHERE message_id=messages.id),"+
+                "EXISTS(SELECT 1 FROM pins WHERE message_id=messages.id) FROM messages"+f.clause+
                 " ORDER BY id LIMIT "+limit+" OFFSET "+Math.max(offset,0);
         try(Cursor c=getReadableDatabase().rawQuery(sql,f.args)){while(c.moveToNext()){
             Item m=new Item();m.id=c.getLong(0);m.author=c.getString(1);m.date=c.getString(2);m.body=c.getString(3);
-            m.media=c.getString(4);m.mediaType=c.getString(5);m.favorite=c.getInt(6)!=0;list.add(m);
+            m.media=c.getString(4);m.mediaType=c.getString(5);m.favorite=c.getInt(6)!=0;m.pinned=c.getInt(7)!=0;list.add(m);
         }}
         return list;
     }
@@ -115,6 +120,30 @@ class MessageDb extends SQLiteOpenHelper {
         SQLiteDatabase d=getWritableDatabase();
         if(isFavorite(id)){d.delete("favorites","message_id=?",new String[]{String.valueOf(id)});return false;}
         ContentValues v=new ContentValues();v.put("message_id",id);d.insertWithOnConflict("favorites",null,v,SQLiteDatabase.CONFLICT_IGNORE);return true;
+    }
+    boolean togglePin(long id){
+        SQLiteDatabase d=getWritableDatabase();
+        if(isPinned(id)){d.delete("pins","message_id=?",new String[]{String.valueOf(id)});return false;}
+        ContentValues v=new ContentValues();v.put("message_id",id);v.put("pinned_at",System.currentTimeMillis());
+        d.insertWithOnConflict("pins",null,v,SQLiteDatabase.CONFLICT_REPLACE);return true;
+    }
+    boolean isPinned(long id){try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM pins WHERE message_id=?",new String[]{String.valueOf(id)})){return c.moveToFirst();}}
+    List<Item> pinnedMessages(){
+        ArrayList<Item> result=new ArrayList<>();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT m.id,m.author,m.date_text,m.body,m.media,m.media_type, "+
+                "EXISTS(SELECT 1 FROM favorites WHERE message_id=m.id),1 "+
+                "FROM pins p JOIN messages m ON m.id=p.message_id ORDER BY p.pinned_at DESC LIMIT 100",null)){
+            while(c.moveToNext()){Item m=new Item();m.id=c.getLong(0);m.author=c.getString(1);
+                m.date=c.getString(2);m.body=c.getString(3);m.media=c.getString(4);
+                m.mediaType=c.getString(5);m.favorite=c.getInt(6)!=0;m.pinned=true;result.add(m);}
+        }
+        return result;
+    }
+    List<String> authors(){
+        ArrayList<String> result=new ArrayList<>();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT author FROM messages WHERE author<>'' GROUP BY author ORDER BY COUNT(*) DESC LIMIT 60",null)){
+            while(c.moveToNext())result.add(c.getString(0));
+        }return result;
     }
     boolean isFavorite(long id){try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM favorites WHERE message_id=?",new String[]{String.valueOf(id)})){return c.moveToFirst();}}
     int positionFor(long id){try(Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM messages WHERE id < ?",new String[]{String.valueOf(id)})){return c.moveToFirst()?c.getInt(0):-1;}}
