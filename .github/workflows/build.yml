@@ -27,6 +27,11 @@ jobs:
           base64 -d overlay/v05_patch.tar.xz.b64 > /tmp/patch.tar.xz
           tar -xJf /tmp/patch.tar.xz
           python3 overlay/fix_v05_build.py
+      - name: Apply v0.6 private search and gallery
+        run: |
+          base64 -d overlay/v06_patch.tar.xz.b64 > /tmp/v06.tar.xz
+          echo '37f109494b1a499dd036afb1e820f5dee79934bf462879b21aa889260ad408c7  /tmp/v06.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/v06.tar.xz
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
