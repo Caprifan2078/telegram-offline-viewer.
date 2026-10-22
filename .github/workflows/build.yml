@@ -18,10 +18,6 @@ jobs:
           base64 -d source.tar.xz.b64 > project.tar.xz
           echo "5734c118086d367157310cc2a67a7965d28de62424383a3c90b5c03b1e4920ee  project.tar.xz" | sha256sum -c -
           tar -xJf project.tar.xz
-      - name: Apply offline video playback fix
-        run: |
-          cp overlay/org/offline/tgviewer/SafeMediaView.java app/src/main/java/org/offline/tgviewer/SafeMediaView.java
-          python3 overlay/patch_main.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
