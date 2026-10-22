@@ -1,0 +1,2 @@
+# Telegram Offline Viewer v0.9
+Offline private multi-chat archive improvements.
