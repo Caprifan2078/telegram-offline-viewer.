@@ -32,6 +32,7 @@ jobs:
           base64 -d overlay/v06_patch.tar.xz.b64 > /tmp/v06.tar.xz
           echo '37f109494b1a499dd036afb1e820f5dee79934bf462879b21aa889260ad408c7  /tmp/v06.tar.xz' | sha256sum -c -
           tar -xJf /tmp/v06.tar.xz
+          sed -i '/import android.view.Gravity;/a import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;\nimport static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;' app/src/main/java/org/offline/tgviewer/SafeMediaView.java
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
