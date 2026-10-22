@@ -58,6 +58,7 @@ class MessageDb extends SQLiteOpenHelper {
     boolean togglePinned(long id){SQLiteDatabase d=getWritableDatabase();if(isPinned(id)){d.delete("pins","message_id=?",new String[]{String.valueOf(id)});return false;}ContentValues v=new ContentValues();v.put("message_id",id);d.insertWithOnConflict("pins",null,v,SQLiteDatabase.CONFLICT_IGNORE);return true;}
     List<Item> pinned(){ArrayList<Item> result=new ArrayList<>();try(Cursor c=getReadableDatabase().rawQuery("SELECT m.id,m.author,m.date_text,m.body FROM messages m JOIN pins p ON p.message_id=m.id ORDER BY m.id DESC LIMIT 100",null)){while(c.moveToNext()){Item i=new Item();i.id=c.getLong(0);i.author=c.getString(1);i.date=c.getString(2);i.body=c.getString(3);result.add(i);}}return result;}
     int totalMessages(){try(Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM messages",null)){return c.moveToFirst()?c.getInt(0):0;}}
+    List<String> participants(){ArrayList<String> names=new ArrayList<>();try(Cursor c=getReadableDatabase().rawQuery("SELECT DISTINCT author FROM messages WHERE author IS NOT NULL AND trim(author)<>'' ORDER BY author LIMIT 100",null)){while(c.moveToNext())names.add(c.getString(0));}return names;}
     private static String fold(String s){return (s==null?"":s).toLowerCase(Locale.ROOT);}
     void clearStage(SQLiteDatabase d){d.delete("staged_attachments",null,null);d.delete("staged_messages",null,null);}
     long stage(SQLiteDatabase d,String author,String date,String body,String media,String type){
