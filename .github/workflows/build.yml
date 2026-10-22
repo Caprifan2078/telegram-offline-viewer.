@@ -33,6 +33,11 @@ jobs:
           echo '37f109494b1a499dd036afb1e820f5dee79934bf462879b21aa889260ad408c7  /tmp/v06.tar.xz' | sha256sum -c -
           tar -xJf /tmp/v06.tar.xz
           sed -i '/import android.view.Gravity;/a import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;\nimport static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;' app/src/main/java/org/offline/tgviewer/SafeMediaView.java
+      - name: Upgrade to v0.7 gallery, search and chat UI
+        run: |
+          base64 -d overlay/v07_patch.tar.xz.b64 > /tmp/v07_patch.tar.xz
+          echo 'ef185325b0cdbb999cae21cbafd29a8713c5f8d8014b4c9d661154f36f03e677  /tmp/v07_patch.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/v07_patch.tar.xz
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
