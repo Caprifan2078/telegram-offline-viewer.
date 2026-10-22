@@ -1,4 +1,4 @@
-name: Build Telegram Archive 0.5 APK
+name: Build Telegram Archive v0.5 APK
 on:
   push:
     branches: [main, feat/v05-native-apk]
