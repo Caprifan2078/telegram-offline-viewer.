@@ -1,0 +1,47 @@
+name: Build Telegram Offline Viewer v0.9 APK
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-v09.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct v0.9 source securely
+        run: |
+          cat overlay/v09-src-part-*.txt | base64 -d > /tmp/viewer-v09.zip
+          echo '23ff7167e6864af5614cd7d6ee3087e53a9f341a99d7e2d7fe2a05ef72db75d8  /tmp/viewer-v09.zip' | sha256sum -c -
+          mkdir project
+          unzip -q /tmp/viewer-v09.zip -d project
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK
+        run: |
+          mkdir -p "$HOME/android-sdk/cmdline-tools" /tmp/sdktools
+          curl -fL --retry 3 https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o /tmp/cmdtools.zip
+          unzip -q /tmp/cmdtools.zip -d /tmp/sdktools
+          mv /tmp/sdktools/cmdline-tools "$HOME/android-sdk/cmdline-tools/latest"
+          echo "ANDROID_HOME=$HOME/android-sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> "$GITHUB_ENV"
+          yes | "$HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$HOME/android-sdk" --licenses >/dev/null || true
+          "$HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$HOME/android-sdk" 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Verify local-only safeguards
+        run: bash project/tests/run-tests.sh
+      - name: Compile APK
+        run: gradle -p project assembleDebug --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Telegram-Offline-Viewer-v09-APK
+          path: project/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
