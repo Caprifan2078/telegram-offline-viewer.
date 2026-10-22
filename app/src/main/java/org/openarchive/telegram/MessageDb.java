@@ -17,7 +17,7 @@ class MessageDb extends SQLiteOpenHelper {
     static final class Attachment {
         long id,messageId; String path,kind,author,date,body;
     }
-    MessageDb(Context ctx,String key){super(ctx,"telegram_"+key+".db",null,6);}
+    MessageDb(Context ctx,String key){super(ctx,"default".equals(key)?"telegram_archive.db":"telegram_"+key+".db",null,6);}
     @Override public void onConfigure(SQLiteDatabase d){super.onConfigure(d);d.enableWriteAheadLogging();}
     @Override public void onCreate(SQLiteDatabase d){
         d.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY,author TEXT,date_text TEXT,body TEXT,media TEXT,media_type TEXT,body_fold TEXT,author_fold TEXT)");
