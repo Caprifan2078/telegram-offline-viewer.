@@ -1,10 +1,8 @@
-name: Build Telegram Offline Viewer APK
+name: Build Telegram Archive 0.5 APK
 on:
   push:
-    branches: [main]
+    branches: [main, feat/v05-native-apk]
   workflow_dispatch:
-  pull_request:
-    branches: [main]
 permissions:
   contents: read
 jobs:
@@ -13,37 +11,6 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - name: Extract application source
-        run: |
-          base64 -d source.tar.xz.b64 > project.tar.xz
-          echo "c8a7113123e74a1718b723547740130053b5f497a8c8ee2916bc47cdd48d98c4  project.tar.xz" | sha256sum -c -
-          tar -xJf project.tar.xz
-      - name: Apply offline video playback fix
-        run: |
-          cp overlay/org/offline/tgviewer/SafeMediaView.java app/src/main/java/org/offline/tgviewer/SafeMediaView.java
-          python3 overlay/patch_main.py
-      - name: Apply new design and media controls
-        run: |
-          base64 -d overlay/v05_patch.tar.xz.b64 > /tmp/patch.tar.xz
-          tar -xJf /tmp/patch.tar.xz
-          python3 overlay/fix_v05_build.py
-      - name: Apply v0.6 private search and gallery
-        run: |
-          base64 -d overlay/v06_patch.tar.xz.b64 > /tmp/v06.tar.xz
-          echo '37f109494b1a499dd036afb1e820f5dee79934bf462879b21aa889260ad408c7  /tmp/v06.tar.xz' | sha256sum -c -
-          tar -xJf /tmp/v06.tar.xz
-          sed -i '/import android.view.Gravity;/a import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;\nimport static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;' app/src/main/java/org/offline/tgviewer/SafeMediaView.java
-      - name: Upgrade to v0.7 gallery, search and chat UI
-        run: |
-          base64 -d overlay/v07_patch.tar.xz.b64 > /tmp/v07_patch.tar.xz
-          echo 'ef185325b0cdbb999cae21cbafd29a8713c5f8d8014b4c9d661154f36f03e677  /tmp/v07_patch.tar.xz' | sha256sum -c -
-          tar -xJf /tmp/v07_patch.tar.xz
-      - name: Apply v0.7 gallery and search
-        run: |
-          base64 -d overlay/v07_patch.tar.xz.b64 > /tmp/v07.tar.xz
-          echo 'ef185325b0cdbb999cae21cbafd29a8713c5f8d8014b4c9d661154f36f03e677  /tmp/v07.tar.xz' | sha256sum -c -
-          tar -xJf /tmp/v07.tar.xz
-          python3 overlay/fix_v07.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -66,6 +33,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Telegram-Offline-Viewer-APK
+          name: Telegram-Archive-v0.5-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
