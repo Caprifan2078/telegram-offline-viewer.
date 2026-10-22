@@ -47,6 +47,10 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.VideoView;
+import android.widget.PopupMenu;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.util.UUID;
 import android.widget.MediaController;
 import android.webkit.MimeTypeMap;
 import java.io.InputStream;
@@ -74,6 +78,8 @@ public class MainActivity extends Activity {
     };
     private final LruCache<String,String> durations=new LruCache<>(250);
     private MessageDb db;private DocumentFolder folder;
+    private JSONArray archives=new JSONArray();private String activeKey="default",activeName="Архив";
+    private SeekBar timeline;private LinearLayout pinnedBar;
     private LinearLayout base,list,filterBar,bottomNav,searchArea,toolArea;
     private ScrollView scroll;private TextView title,subtitle,status,pageLabel;
     private EditText searchInput,authorInput;private CheckBox mediaOnly;
@@ -88,9 +94,10 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
-        db=new MessageDb(this);
+        loadArchiveRegistry();
+        db=new MessageDb(this,activeKey);
         mine=getPreferences(MODE_PRIVATE).getString("mine","");
-        String old=getPreferences(MODE_PRIVATE).getString("tree",null);
+        String old=activeTree();
         if(old!=null)try{folder=new DocumentFolder(getContentResolver(),Uri.parse(old));}catch(Exception ignored){}
         createUi();showPage();
     }
@@ -105,6 +112,62 @@ public class MainActivity extends Activity {
     private void space(ViewGroup g,int height){g.addView(new View(this),new ViewGroup.LayoutParams(1,px(height)));}
     private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_SHORT).show();}
 
+    private void loadArchiveRegistry(){
+        try{archives=new JSONArray(getPreferences(MODE_PRIVATE).getString("archive_registry","[]"));}catch(Exception e){archives=new JSONArray();}
+        activeKey=getPreferences(MODE_PRIVATE).getString("active_archive","default");
+        if(archives.length()==0){
+            String old=getPreferences(MODE_PRIVATE).getString("tree",null);
+            if(old!=null)try{JSONObject o=new JSONObject();o.put("key","default");o.put("name","Первая переписка");o.put("tree",old);archives.put(o);saveRegistry();}catch(Exception ignored){}
+        }
+        for(int i=0;i<archives.length();i++){JSONObject o=archives.optJSONObject(i);if(o!=null&&activeKey.equals(o.optString("key"))){activeName=o.optString("name","Архив");return;}}
+        if(archives.length()>0){JSONObject o=archives.optJSONObject(0);activeKey=o.optString("key","default");activeName=o.optString("name","Архив");}
+    }
+    private void saveRegistry(){getPreferences(MODE_PRIVATE).edit().putString("archive_registry",archives.toString()).putString("active_archive",activeKey).apply();}
+    private String activeTree(){for(int i=0;i<archives.length();i++){JSONObject o=archives.optJSONObject(i);if(o!=null&&activeKey.equals(o.optString("key")))return o.optString("tree",null);}return null;}
+    private void registerArchive(String name,String tree){
+        try{JSONObject o=new JSONObject();String key=UUID.randomUUID().toString().replace("-","");o.put("key",key);o.put("name",name);o.put("tree",tree);archives.put(o);activateArchive(key);}catch(Exception e){toast("Ошибка добавления чата");}
+    }
+    private void activateArchive(String key){
+        if(importing){toast("Импорт ещё идёт");return;}
+        JSONObject choice=null;for(int i=0;i<archives.length();i++){JSONObject o=archives.optJSONObject(i);if(o!=null&&key.equals(o.optString("key")))choice=o;}
+        if(choice==null)return;stopPlayback();++loadToken;activeKey=key;activeName=choice.optString("name","Архив");saveRegistry();
+        if(db!=null)db.close();db=new MessageDb(this,activeKey);
+        String path=choice.optString("tree","");folder=path.isEmpty()?null:new DocumentFolder(getContentResolver(),Uri.parse(path));
+        chatOffset=searchOffset=mediaOffset=favOffset=0;screen="chat";returnScreen="";showPage();
+    }
+    private void chatPicker(){
+        String[] labels=new String[archives.length()+1];for(int i=0;i<archives.length();i++){JSONObject o=archives.optJSONObject(i);labels[i]=o==null?"Чат":o.optString("name","Чат");}
+        labels[archives.length()]="＋ Добавить чат";
+        new AlertDialog.Builder(this).setTitle("Мои архивы").setItems(labels,(d,i)->{
+            if(i==archives.length())chooseFolder();else{JSONObject o=archives.optJSONObject(i);if(o!=null)activateArchive(o.optString("key"));}
+        }).show();
+    }
+    private void moreMenu(View anchor){
+        PopupMenu menu=new PopupMenu(this,anchor);menu.getMenu().add("⇈ В начало");menu.getMenu().add("⇊ В конец");menu.getMenu().add("📌 Закреплённые");menu.getMenu().add("Мои архивы");
+        menu.setOnMenuItemClickListener(item->{String x=item.getTitle().toString();
+            if(x.contains("начало")){chatOffset=0;showPage();}
+            else if(x.contains("конец")){worker.execute(()->{int n=db.totalMessages();runOnUiThread(()->{chatOffset=Math.max(0,n-PAGE);showPage();});});}
+            else if(x.contains("Закрепл"))showPinList();
+            else chatPicker();return true;
+        });menu.show();
+    }
+    private void renderPinnedBar(){
+        pinnedBar.removeAllViews();if(!screen.equals("chat"))return;
+        worker.execute(()->{List<MessageDb.Item> pins=db.pinned();runOnUiThread(()->{
+            if(!screen.equals("chat"))return;pinnedBar.removeAllViews();if(pins.isEmpty())return;
+            MessageDb.Item top=pins.get(0);
+            TextView t=text("📌 "+clip(top.body==null||top.body.isEmpty()?"Медиа":top.body,48)+" · "+pins.size()+" закрепл.",12,ACCENT);
+            t.setPadding(px(12),px(8),px(12),px(8));t.setBackground(shape(PANEL,10));pinnedBar.addView(t,p(-1,37));
+            t.setOnClickListener(v->jump(top.id,""));t.setOnLongClickListener(v->{showPinList();return true;});
+        });});
+    }
+    private void showPinList(){
+        worker.execute(()->{List<MessageDb.Item> pins=db.pinned();runOnUiThread(()->{
+            if(pins.isEmpty()){toast("Нет закреплённых сообщений");return;}
+            String[] labels=new String[pins.size()];for(int i=0;i<pins.size();i++)labels[i]=clock(pins.get(i).date)+" · "+clip(pins.get(i).body,58);
+            new AlertDialog.Builder(this).setTitle("Закреплённые сообщения").setItems(labels,(d,i)->jump(pins.get(i).id,"")).show();
+        });});
+    }
     private void createUi(){
         base=column();base.setBackgroundColor(BG);base.setPadding(px(9),px(5),px(9),px(6));setContentView(base);
         LinearLayout head=row();base.addView(head,p(-1,55));
@@ -113,16 +176,26 @@ public class MainActivity extends Activity {
         title=text("Telegram Archive",19,FG);title.setTypeface(null,Typeface.BOLD);headings.addView(title);
         subtitle=text("Личный архив · офлайн",11,SUB);headings.addView(subtitle);
         Button settings=btn("⚙");head.addView(settings,p(39,40));settings.setOnClickListener(v->identityDialog());
-        folderButton=btn("📁");head.addView(folderButton,p(43,40));folderButton.setOnClickListener(v->chooseFolder());
+        folderButton=btn("＋");head.addView(folderButton,p(43,40));folderButton.setOnClickListener(v->chooseFolder());
+        Button chats=btn("Чаты ▾");head.addView(chats,p(75,40));chats.setOnClickListener(v->chatPicker());
         bottomNav=row();base.addView(bottomNav,p(-1,51));
         addTab("💬 Чат","chat");addTab("▦ Медиа","media");addTab("★ Избранное","favorites");addTab("⌕ Поиск","search");
         toolArea=column();base.addView(toolArea,p(-1,-2));
+        pinnedBar=row();base.addView(pinnedBar,p(-1,-2));
         filterBar=column();toolArea.addView(filterBar,p(-1,-2));
         searchArea=column();toolArea.addView(searchArea,p(-1,-2));
         status=text("",11,SUB);status.setPadding(px(8),px(4),px(8),px(6));status.setMaxLines(3);base.addView(status,p(-1,-2));
-        scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(false);
+        scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(true);
         base.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         list=column();list.setPadding(px(3),px(6),px(3),px(14));scroll.addView(list);
+        LinearLayout seekRow=row();base.addView(seekRow,p(-1,30));
+        TextView seekLabel=text("↕",17,ACCENT);seekRow.addView(seekLabel,p(29,26));
+        timeline=new SeekBar(this);seekRow.addView(timeline,new LinearLayout.LayoutParams(0,px(30),1));
+        timeline.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+            public void onProgressChanged(SeekBar b,int v,boolean user){}
+            public void onStartTrackingTouch(SeekBar b){}
+            public void onStopTrackingTouch(SeekBar b){if(screen.equals("chat")){chatOffset=b.getProgress();highlightId=-1;showPage();}}
+        });
         LinearLayout bottom=row();base.addView(bottom,p(-1,52));
         backPage=btn("‹ Назад");nextPage=btn("Далее ›");pageLabel=text("",12,SUB);pageLabel.setGravity(Gravity.CENTER);
         bottom.addView(backPage,p(95,44));bottom.addView(pageLabel,new LinearLayout.LayoutParams(0,-2,1));bottom.addView(nextPage,p(95,44));
@@ -140,6 +213,7 @@ public class MainActivity extends Activity {
             TextView t=(TextView)bottomNav.getChildAt(i);boolean selected=screen.equals(t.getTag());
             t.setBackground(shape(selected?CHIP:PANEL,13));t.setTextColor(selected?FG:SUB);
         }
+        title.setText(activeName);
         subtitle.setText(screen.equals("chat")?"История сообщений · локально":screen.equals("media")?"Фото, видео, голосовые и файлы":screen.equals("favorites")?"Твои сохранённые сообщения":"Найди любое сообщение");
     }
     private void configureBars(){
@@ -157,6 +231,7 @@ public class MainActivity extends Activity {
         }
         if("chat".equals(screen)){
             LinearLayout actions=row();
+            Button more=btn("⋮");actions.addView(more,p(40,42));more.setOnClickListener(v->moreMenu(more));
             Button date=btn("📅 Перейти к дате");actions.addView(date,new LinearLayout.LayoutParams(0,px(42),1));date.setOnClickListener(v->chooseDate());
             if(!returnScreen.isEmpty()){
                 backButton=btn("↩ Назад к "+("media".equals(returnScreen)?"медиа":"поиску"));
@@ -227,11 +302,14 @@ public class MainActivity extends Activity {
         Uri uri=data.getData();
         try{getContentResolver().takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION);}
         catch(Exception e){status.setText("Нет доступа к папке: "+e.getMessage());return;}
-        getPreferences(MODE_PRIVATE).edit().putString("tree",uri.toString()).apply();
-        folder=new DocumentFolder(getContentResolver(),uri);
+        EditText chatName=new EditText(this);chatName.setSingleLine(true);chatName.setHint("Например, переписка с Ваней");
+        new AlertDialog.Builder(this).setTitle("Название чата").setView(chatName).setPositiveButton("Добавить",(dd,ww)->{
+        String name=chatName.getText().toString().trim();if(name.isEmpty())name="Чат "+(archives.length()+1);
+        registerArchive(name,uri.toString());
         new AlertDialog.Builder(this).setTitle("Импортировать экспорт Telegram?")
                 .setMessage("Будут проиндексированы все messages*.html. Фото, видео и голосовые останутся в этой папке. Текущие сообщения заменятся только после успешного импорта. Избранное по возможности сохранится.")
                 .setPositiveButton("Импортировать",(d,w)->importArchive()).setNegativeButton("Отмена",null).show();
+        }).setNegativeButton("Отмена",null).show();
     }
     private void importArchive(){
         if(folder==null||importing)return;stopPlayback();importing=true;folderButton.setEnabled(false);status.setText("Создаю локальную базу, не копируя медиа…");
@@ -246,7 +324,7 @@ public class MainActivity extends Activity {
     private int getLimit(){return screen.equals("media")?MEDIA_PAGE:PAGE;}
     private void setOffset(int x){switch(screen){case "media":mediaOffset=x;break;case "search":searchOffset=x;break;case "favorites":favOffset=x;break;default:chatOffset=x;}}
     private void showPage(){
-        if(importing)return;stopPlayback();refreshTabs();configureBars();int token=++loadToken;
+        if(importing)return;stopPlayback();refreshTabs();configureBars();renderPinnedBar();int token=++loadToken;
         final String tab=screen,kind=mediaKind,search=q,who=byAuthor;
         final int requested=getOffset();final boolean deepMode=deep,hasMedia=onlyMedia;
         backPage.setEnabled(false);nextPage.setEnabled(false);status.setText("Загружаю…");
@@ -264,6 +342,8 @@ public class MainActivity extends Activity {
                     total=count;setOffset(pos);list.removeAllViews();
                     if(gallery)renderMedia(attachments);else renderMessages(messages,links,find);
                     int shown=gallery?attachments.size():messages.size();
+                    timeline.setVisibility("chat".equals(tab)?View.VISIBLE:View.INVISIBLE);
+                    timeline.setMax(Math.max(0,count-1));if("chat".equals(tab))timeline.setProgress(pos);
                     pageLabel.setText(count==0?"Нет данных":(pos+1)+"–"+(pos+shown)+" / "+count);
                     backPage.setEnabled(pos>0);nextPage.setEnabled(pos+shown<count);
                     if(count==0)status.setText(gallery?"Таких медиа пока нет. Попробуй повторный импорт исходных HTML.":
@@ -340,10 +420,11 @@ public class MainActivity extends Activity {
     }
     private String initial(String s){if(s==null||s.isEmpty())return "?";return s.substring(0,1).toUpperCase(Locale.ROOT);}
     private void messageActions(MessageDb.Item m){
-        String[] options={m.favorite?"Убрать из избранного":"★ Добавить в избранное","Скопировать текст","Перейти к сообщению"};
+        String[] options={m.favorite?"Убрать из избранного":"★ Добавить в избранное",db.isPinned(m.id)?"Открепить":"📌 Закрепить сообщение","Скопировать текст","Перейти к сообщению"};
         new AlertDialog.Builder(this).setTitle("Сообщение · "+clock(m.date)).setItems(options,(dia,which)->{
             if(which==0)toggleStar(m.id);
-            else if(which==1){android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+            else if(which==1){worker.execute(()->{boolean pin=db.togglePinned(m.id);runOnUiThread(()->{toast(pin?"Закреплено":"Откреплено");renderPinnedBar();});});}
+            else if(which==2){android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
                 clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Telegram message",m.body==null?"":m.body));toast("Текст скопирован");}
             else jump(m.id,screen.equals("search")?"search":screen.equals("favorites")?"favorites":"");
         }).show();
@@ -382,7 +463,7 @@ public class MainActivity extends Activity {
     }
     private String mediaLabel(String k){switch(k){case "round":return "Видеокружочек";case "voice":return "Голосовое";case "video":return "Видео";case "audio":return "Аудио / музыка";case "image":return "Фото";case "gif":return "GIF";case "sticker":return "Стикер";default:return "Файл";}}
     private View mediaTile(MessageDb.Attachment a,boolean gallery){
-        if(a.kind.equals("round"))return circle(a,gallery?88:118);
+        if(a.kind.equals("round"))return circle(a,gallery?124:190);
         if(a.kind.equals("voice")||a.kind.equals("audio"))return voice(a,gallery);
         if(a.kind.equals("image")||a.kind.equals("gif")||a.kind.equals("sticker")||a.kind.equals("video")){
             FrameLayout box=new FrameLayout(this);int size=gallery?84:190;
