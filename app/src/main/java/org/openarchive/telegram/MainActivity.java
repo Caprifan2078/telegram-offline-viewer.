@@ -72,7 +72,7 @@ public class MainActivity extends Activity {
     private static final int BG=0xff101928,PANEL=0xff182638,INCOMING=0xff233249,OUTGOING=0xff245a55,
             FG=0xfff4f8ff,SUB=0xffaec0d1,ACCENT=0xff67c2f7,CHIP=0xff304a64,HIGHLIGHT=0xff366a87;
     private static final String[] MEDIA_KEYS={"all","round","voice","image","video","audio","file","gif","sticker"};
-    private static final String[] MEDIA_LABELS={"Всё","Кружочки","Голосовые","Фото","Видео","Музыка","Файлы","GIF","Стикеры"};
+    private static final String[] MEDIA_LABELS={"Всё","Видео-сообщения","Голосовые","Фото","Видео","Музыка","Файлы","GIF","Стикеры"};
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final ExecutorService mediaWorker=Executors.newFixedThreadPool(2);
     private final Handler handler=new Handler(Looper.getMainLooper());
@@ -82,7 +82,7 @@ public class MainActivity extends Activity {
     private final LruCache<String,String> durations=new LruCache<>(250);
     private MessageDb db;private DocumentFolder folder;
     private JSONArray archives=new JSONArray();private String activeKey="default",activeName="Архив";private long pinnedFocus=-1;
-    private SeekBar timeline;private LinearLayout pinnedBar;
+    private LinearLayout pinnedBar;
     private FrameLayout root, floatingPanel;
     private VerticalTimeline verticalTimeline;
     private final int[] participantColors={0xff315c79,0xff665184,0xff326c65,0xff75513f,0xff5d607f,0xff724d68,0xff52683a,0xff426884};
@@ -196,21 +196,13 @@ public class MainActivity extends Activity {
         filterBar=column();toolArea.addView(filterBar,p(-1,-2));
         searchArea=column();toolArea.addView(searchArea,p(-1,-2));
         status=text("",11,SUB);status.setPadding(px(8),px(4),px(8),px(6));status.setMaxLines(3);base.addView(status,p(-1,-2));
-        scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(true);
+        scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(false);
         FrameLayout scrollHost=new FrameLayout(this);
         base.addView(scrollHost,new LinearLayout.LayoutParams(-1,0,1));
         scrollHost.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
         verticalTimeline=new VerticalTimeline();
         scrollHost.addView(verticalTimeline,new FrameLayout.LayoutParams(px(25),-1,Gravity.END));
         list=column();list.setPadding(px(3),px(6),px(3),px(14));scroll.addView(list);
-        LinearLayout seekRow=row();base.addView(seekRow,p(-1,30));
-        TextView seekLabel=text("↕",17,ACCENT);seekRow.addView(seekLabel,p(29,26));
-        timeline=new SeekBar(this);seekRow.addView(timeline,new LinearLayout.LayoutParams(0,px(30),1));
-        timeline.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
-            public void onProgressChanged(SeekBar b,int v,boolean user){}
-            public void onStartTrackingTouch(SeekBar b){}
-            public void onStopTrackingTouch(SeekBar b){if(screen.equals("chat")){chatOffset=b.getProgress();highlightId=-1;showPage();}}
-        });
         LinearLayout bottom=row();base.addView(bottom,p(-1,52));
         backPage=btn("‹ Назад");nextPage=btn("Далее ›");pageLabel=text("",12,SUB);pageLabel.setGravity(Gravity.CENTER);
         bottom.addView(backPage,p(95,44));bottom.addView(pageLabel,new LinearLayout.LayoutParams(0,-2,1));bottom.addView(nextPage,p(95,44));
@@ -357,8 +349,6 @@ public class MainActivity extends Activity {
                     total=count;setOffset(pos);list.removeAllViews();
                     if(gallery)renderMedia(attachments);else renderMessages(messages,links,find);
                     int shown=gallery?attachments.size():messages.size();
-                    timeline.setVisibility("chat".equals(tab)?View.VISIBLE:View.INVISIBLE);
-                    timeline.setMax(Math.max(0,count-1));if("chat".equals(tab))timeline.setProgress(pos);
                     verticalTimeline.setVisibility("chat".equals(tab)?View.VISIBLE:View.GONE);
                     if("chat".equals(tab))verticalTimeline.setPosition(pos,count);
                     pageLabel.setText(count==0?"Нет данных":(pos+1)+"–"+(pos+shown)+" / "+count);
@@ -481,7 +471,7 @@ public class MainActivity extends Activity {
         }
         scroll.post(()->scroll.scrollTo(0,0));
     }
-    private String mediaLabel(String k){switch(k){case "round":return "Видеокружочек";case "voice":return "Голосовое";case "video":return "Видео";case "audio":return "Аудио / музыка";case "image":return "Фото";case "gif":return "GIF";case "sticker":return "Стикер";default:return "Файл";}}
+    private String mediaLabel(String k){switch(k){case "round":return "Видео-сообщение";case "voice":return "Голосовое";case "video":return "Видео";case "audio":return "Аудио / музыка";case "image":return "Фото";case "gif":return "GIF";case "sticker":return "Стикер";default:return "Файл";}}
     private View mediaTile(MessageDb.Attachment a,boolean gallery){
         if(a.kind.equals("round"))return circle(a,gallery?124:190,!gallery);
         if(a.kind.equals("voice")||a.kind.equals("audio"))return voice(a,gallery);
@@ -532,7 +522,7 @@ public class MainActivity extends Activity {
     }
     private void mediaActions(MessageDb.Attachment a){
         String[] names=a.kind.equals("round")?
-            new String[]{"▶ Плавающий кружочек","⛶ Полный экран / PiP","↗ Перейти к сообщению","☆ В избранное","Открыть внешним плеером"}:
+            new String[]{"▶ Плавающее видео-сообщение","⛶ Полный экран / PiP","↗ Перейти к сообщению","☆ В избранное","Открыть внешним плеером"}:
             new String[]{"▶ Воспроизвести / открыть","↗ Перейти к сообщению","☆ Отметить сообщение","⛶ Открыть полностью"};
         new AlertDialog.Builder(this).setTitle(mediaLabel(a.kind)+" · "+day(a.date)).setItems(names,(dlg,which)->{
             if(a.kind.equals("round")){
@@ -628,7 +618,7 @@ public class MainActivity extends Activity {
                             transform.setScale(sx,sy,w/2f,h/2f);texture.setTransform(transform);
                             overlay.setVisibility(View.GONE);poster.setVisibility(View.INVISIBLE);mp.start();
                         });
-                        p.setOnErrorListener((mp,what,extra)->{toast("Видео не запустилось. Удержи кружочек → открой полностью.");stopPlayback();overlay.setVisibility(View.VISIBLE);return true;});
+                        p.setOnErrorListener((mp,what,extra)->{toast("Видео не запустилось. Удержи видео-сообщение → открой полностью.");stopPlayback();overlay.setVisibility(View.VISIBLE);return true;});
                         p.prepareAsync();
                     }catch(Exception e){stopPlayback();overlay.setVisibility(View.VISIBLE);toast("Ошибка воспроизведения");}
                 }
@@ -751,7 +741,7 @@ public class MainActivity extends Activity {
        resolveMedia(a.path,uri->{
           Intent intent=new Intent(this,RoundPlayerActivity.class);
           intent.setData(uri);intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-          try{startActivity(intent);}catch(Exception e){toast("Не удалось открыть видеокружочек");}
+          try{startActivity(intent);}catch(Exception e){toast("Не удалось открыть видео-сообщение");}
        });
     }
     private void closeFloatingRound(){
