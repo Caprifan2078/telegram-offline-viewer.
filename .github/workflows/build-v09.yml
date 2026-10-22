@@ -19,6 +19,7 @@ jobs:
           echo '23ff7167e6864af5614cd7d6ee3087e53a9f341a99d7e2d7fe2a05ef72db75d8  /tmp/viewer-v09.zip' | sha256sum -c -
           mkdir project
           unzip -q /tmp/viewer-v09.zip -d project
+          python3 overlay/fix_v09_layout.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
