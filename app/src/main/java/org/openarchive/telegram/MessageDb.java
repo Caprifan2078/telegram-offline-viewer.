@@ -17,7 +17,7 @@ class MessageDb extends SQLiteOpenHelper {
     static final class Attachment {
         long id,messageId; String path,kind,author,date,body;
     }
-    MessageDb(Context ctx){super(ctx,"telegram_archive.db",null,5);}
+    MessageDb(Context ctx,String key){super(ctx,"telegram_"+key+".db",null,6);}
     @Override public void onConfigure(SQLiteDatabase d){super.onConfigure(d);d.enableWriteAheadLogging();}
     @Override public void onCreate(SQLiteDatabase d){
         d.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY,author TEXT,date_text TEXT,body TEXT,media TEXT,media_type TEXT,body_fold TEXT,author_fold TEXT)");
@@ -25,6 +25,7 @@ class MessageDb extends SQLiteOpenHelper {
         d.execSQL("CREATE VIRTUAL TABLE messages_fts USING fts4(author,body,date_text,content='messages',tokenize=unicode61)");
         mediaTables(d);
         d.execSQL("CREATE TABLE favorites (message_id INTEGER PRIMARY KEY)");
+        d.execSQL("CREATE TABLE pins (message_id INTEGER PRIMARY KEY)");
     }
     private void mediaTables(SQLiteDatabase d){
         d.execSQL("CREATE TABLE IF NOT EXISTS attachments (id INTEGER PRIMARY KEY,message_id INTEGER NOT NULL,path TEXT NOT NULL,kind TEXT NOT NULL)");
@@ -43,6 +44,7 @@ class MessageDb extends SQLiteOpenHelper {
             d.execSQL("INSERT INTO attachments(message_id,path,kind) SELECT id,media,CASE WHEN lower(media) LIKE '%round_video%' OR lower(media) LIKE '%video_message%' THEN 'round' WHEN media_type='video' THEN 'video' WHEN media_type='audio' THEN 'audio' ELSE 'image' END FROM messages WHERE media IS NOT NULL AND media<>''");
         }
         if(old<4){d.execSQL("CREATE TABLE IF NOT EXISTS favorites (message_id INTEGER PRIMARY KEY)");}
+        if(old<6)d.execSQL("CREATE TABLE IF NOT EXISTS pins (message_id INTEGER PRIMARY KEY)");
         if(old<5){
             d.execSQL("ALTER TABLE messages ADD COLUMN body_fold TEXT");
             d.execSQL("ALTER TABLE messages ADD COLUMN author_fold TEXT");
@@ -52,6 +54,10 @@ class MessageDb extends SQLiteOpenHelper {
 
         }
     }
+    boolean isPinned(long id){try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM pins WHERE message_id=?",new String[]{String.valueOf(id)})){return c.moveToFirst();}}
+    boolean togglePinned(long id){SQLiteDatabase d=getWritableDatabase();if(isPinned(id)){d.delete("pins","message_id=?",new String[]{String.valueOf(id)});return false;}ContentValues v=new ContentValues();v.put("message_id",id);d.insertWithOnConflict("pins",null,v,SQLiteDatabase.CONFLICT_IGNORE);return true;}
+    List<Item> pinned(){ArrayList<Item> result=new ArrayList<>();try(Cursor c=getReadableDatabase().rawQuery("SELECT m.id,m.author,m.date_text,m.body FROM messages m JOIN pins p ON p.message_id=m.id ORDER BY m.id DESC LIMIT 100",null)){while(c.moveToNext()){Item i=new Item();i.id=c.getLong(0);i.author=c.getString(1);i.date=c.getString(2);i.body=c.getString(3);result.add(i);}}return result;}
+    int totalMessages(){try(Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM messages",null)){return c.moveToFirst()?c.getInt(0):0;}}
     private static String fold(String s){return (s==null?"":s).toLowerCase(Locale.ROOT);}
     void clearStage(SQLiteDatabase d){d.delete("staged_attachments",null,null);d.delete("staged_messages",null,null);}
     long stage(SQLiteDatabase d,String author,String date,String body,String media,String type){
@@ -70,6 +76,7 @@ class MessageDb extends SQLiteOpenHelper {
             d.execSQL("INSERT INTO messages(id,author,date_text,body,media,media_type,body_fold,author_fold) SELECT id,author,date_text,body,media,media_type,body_fold,author_fold FROM staged_messages ORDER BY id");
             d.execSQL("INSERT INTO attachments(message_id,path,kind) SELECT message_id,path,kind FROM staged_attachments ORDER BY id");
             d.execSQL("DELETE FROM favorites WHERE message_id NOT IN (SELECT id FROM messages)");
+            d.execSQL("DELETE FROM pins WHERE message_id NOT IN (SELECT id FROM messages)");
             d.execSQL("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')");
             clearStage(d);d.setTransactionSuccessful();
         }finally{d.endTransaction();}
