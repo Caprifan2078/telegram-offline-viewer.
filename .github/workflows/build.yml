@@ -38,6 +38,11 @@ jobs:
           base64 -d overlay/v07_patch.tar.xz.b64 > /tmp/v07_patch.tar.xz
           echo 'ef185325b0cdbb999cae21cbafd29a8713c5f8d8014b4c9d661154f36f03e677  /tmp/v07_patch.tar.xz' | sha256sum -c -
           tar -xJf /tmp/v07_patch.tar.xz
+      - name: Apply v0.7 gallery and search
+        run: |
+          base64 -d overlay/v07_patch.tar.xz.b64 > /tmp/v07.tar.xz
+          echo 'ef185325b0cdbb999cae21cbafd29a8713c5f8d8014b4c9d661154f36f03e677  /tmp/v07.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/v07.tar.xz
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
