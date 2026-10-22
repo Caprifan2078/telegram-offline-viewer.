@@ -673,6 +673,7 @@ jobs:
           base64 -d /tmp/viewer_v08.b64 > /tmp/viewer_v08.zip
           echo "58987f3c0081e21f5d10f4458f0e90e88b8618e34ec1e85c44df12e09e8ea72d  /tmp/viewer_v08.zip" | sha256sum -c -
           unzip -q /tmp/viewer_v08.zip -d project
+          python3 overlay/fix_v08_layout.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
