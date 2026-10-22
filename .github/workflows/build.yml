@@ -20,11 +20,15 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Android SDK
+      - name: Install Android command line SDK
         run: |
-          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          yes | $ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager --licenses >/dev/null || true
-          $ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+          mkdir -p "$HOME/android-sdk/cmdline-tools"
+          curl -fL --retry 3 https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o /tmp/cmdtools.zip
+          unzip -q /tmp/cmdtools.zip -d /tmp/sdktools
+          mv /tmp/sdktools/cmdline-tools "$HOME/android-sdk/cmdline-tools/latest"
+          echo "ANDROID_HOME=$HOME/android-sdk" >> "$GITHUB_ENV"
+          yes | "$HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$HOME/android-sdk" --licenses >/dev/null || true
+          "$HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$HOME/android-sdk" 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
