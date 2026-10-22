@@ -26,6 +26,7 @@ jobs:
         run: |
           base64 -d overlay/v05_patch.tar.xz.b64 > /tmp/patch.tar.xz
           tar -xJf /tmp/patch.tar.xz
+          python3 overlay/fix_v05_build.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
