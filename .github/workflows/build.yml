@@ -1,0 +1,36 @@
+name: Build Telegram Offline Viewer APK
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract application source
+        run: |
+          base64 -d source.tar.xz.b64 > project.tar.xz
+          echo "c8a7113123e74a1718b723547740130053b5f497a8c8ee2916bc47cdd48d98c4  project.tar.xz" | sha256sum -c -
+          tar -xJf project.tar.xz
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Android SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Telegram-Offline-Viewer-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
