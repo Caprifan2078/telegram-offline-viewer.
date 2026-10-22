@@ -22,6 +22,10 @@ jobs:
         run: |
           cp overlay/org/offline/tgviewer/SafeMediaView.java app/src/main/java/org/offline/tgviewer/SafeMediaView.java
           python3 overlay/patch_main.py
+      - name: Apply new design and media controls
+        run: |
+          base64 -d v05_patch.tar.xz.b64 > /tmp/patch.tar.xz
+          tar -xJf /tmp/patch.tar.xz
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
