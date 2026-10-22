@@ -334,11 +334,19 @@ public class MainActivity extends Activity {
     }
     private void chooseDate(){
         Calendar c=Calendar.getInstance();
-        new DatePickerDialog(this,(view,y,m,d)->worker.execute(()->{
-            int pos=db.positionForDate(y,m+1,d);
-            runOnUiThread(()->{if(pos>=0){screen="chat";chatOffset=Math.max(0,pos-5);highlightId=-1;returnScreen="";showPage();}
-                else toast("На эту дату сообщений нет");});
-        }),c.get(Calendar.YEAR),c.get(Calendar.MONTH),c.get(Calendar.DAY_OF_MONTH)).show();
+        new DatePickerDialog(this,(view,y,m,d)->{
+            final String requested=String.format(Locale.ROOT,"%04d-%02d-%02d",y,m+1,d);
+            status.setText("Ищу переписку по дате "+requested+"…");
+            worker.execute(()->{
+                MessageDb.DateMatch found=db.nearestDate(y,m+1,d);
+                runOnUiThread(()->{
+                    if(found.position<0){toast("В переписке нет сообщений с распознанной датой");return;}
+                    screen="chat";chatOffset=Math.max(0,found.position-5);highlightId=-1;returnScreen="";
+                    showPage();
+                    if(!requested.equals(found.day))toast("Ближайшая дата переписки: "+found.day);
+                });
+            });
+        },c.get(Calendar.YEAR),c.get(Calendar.MONTH),c.get(Calendar.DAY_OF_MONTH)).show();
     }
     private void chooseFolder(){
         Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
