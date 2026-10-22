@@ -16,12 +16,10 @@ jobs:
       - name: Extract application source
         run: |
           base64 -d source.tar.xz.b64 > project.tar.xz
-          echo "c8a7113123e74a1718b723547740130053b5f497a8c8ee2916bc47cdd48d98c4  project.tar.xz" | sha256sum -c -
+          echo "5734c118086d367157310cc2a67a7965d28de62424383a3c90b5c03b1e4920ee  project.tar.xz" | sha256sum -c -
           tar -xJf project.tar.xz
-      - name: Apply offline video playback fix
-        run: |
-          cp overlay/org/offline/tgviewer/SafeMediaView.java app/src/main/java/org/offline/tgviewer/SafeMediaView.java
-          python3 overlay/patch_main.py
+      - name: Fix nested Entry generic type in source
+        run: sed -i 's/Map.Entry<String,Map<String,Entry>>/java.util.Map.Entry<String,Map<String,DocumentFolder.Entry>>/' app/src/main/java/org/openarchive/telegram/DocumentFolder.java
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
