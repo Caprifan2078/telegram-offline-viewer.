@@ -81,7 +81,7 @@ public class MainActivity extends Activity {
     };
     private final LruCache<String,String> durations=new LruCache<>(250);
     private MessageDb db;private DocumentFolder folder;
-    private JSONArray archives=new JSONArray();private String activeKey="default",activeName="Архив";
+    private JSONArray archives=new JSONArray();private String activeKey="default",activeName="Архив";private long pinnedFocus=-1;
     private SeekBar timeline;private LinearLayout pinnedBar;
     private FrameLayout root, floatingPanel;
     private VerticalTimeline verticalTimeline;
