@@ -704,6 +704,81 @@ public class MainActivity extends Activity {
             runOnUiThread(()->{if(!isFinishing()&&token==loadToken){thumbs.put(path,result);image.setImageBitmap(result);}else result.recycle();});
         });
     }
+
+    private int darken(int color){return Color.rgb(Math.round(Color.red(color)*.8f),Math.round(Color.green(color)*.8f),Math.round(Color.blue(color)*.8f));}
+    private String colorKey(String name){return "sender_"+activeKey+"_"+(name==null?"":name.toLowerCase(Locale.ROOT));}
+    private int authorColor(String name){
+       int idx=((name==null?0:name.hashCode())&Integer.MAX_VALUE)%participantColors.length;
+       return getPreferences(MODE_PRIVATE).getInt(colorKey(name),name!=null&&name.equalsIgnoreCase(mine)?OUTGOING:participantColors[idx]);
+    }
+    private void participantSettings(){
+       worker.execute(()->{List<String> authors=db.participants();runOnUiThread(()->{
+          if(authors.isEmpty()){toast("Сначала импортируй сообщения");return;}
+          new AlertDialog.Builder(this).setTitle("Цвета участников").setItems(authors.toArray(new String[0]),(dlg,which)->pickAuthorColor(authors.get(which))).show();
+       });});
+    }
+    private void pickAuthorColor(String name){
+       String[] names={"Голубой","Сиреневый","Бирюзовый","Коричневый","Синий","Розовый","Оливковый","Стальной","Сброс"};
+       new AlertDialog.Builder(this).setTitle(name).setItems(names,(d,which)->{
+          android.content.SharedPreferences.Editor edit=getPreferences(MODE_PRIVATE).edit();
+          if(which==participantColors.length)edit.remove(colorKey(name));else edit.putInt(colorKey(name),participantColors[which]);edit.apply();showPage();
+       }).show();
+    }
+    private void settingsMenu(){new AlertDialog.Builder(this).setTitle("Настройки").setItems(
+       new String[]{"Моё имя (сообщения справа)","Цвета участников","Мои архивы"},(d,i)->{
+          if(i==0)identityDialog();else if(i==1)participantSettings();else chatPicker();
+       }).show();}
+    private final class VerticalTimeline extends View {
+       private final Paint brush=new Paint(3);private int position,count;
+       VerticalTimeline(){super(MainActivity.this);}
+       void setPosition(int p,int c){position=p;count=c;invalidate();}
+       @Override protected void onDraw(Canvas c){
+         super.onDraw(c);float x=getWidth()-px(10),top=px(13),bottom=getHeight()-px(13);
+         brush.setColor(0xff42657f);brush.setStrokeWidth(px(4));c.drawLine(x,top,x,bottom,brush);
+         float ratio=count<=1?0:(float)position/(count-1);brush.setColor(ACCENT);c.drawCircle(x,top+(bottom-top)*ratio,px(9),brush);
+       }
+       @Override public boolean onTouchEvent(MotionEvent e){
+         if(!screen.equals("chat"))return false;
+         if(e.getActionMasked()==MotionEvent.ACTION_UP){
+           float frac=Math.max(0,Math.min(1,(e.getY()-px(13))/Math.max(1,getHeight()-px(26))));
+           chatOffset=Math.round(frac*Math.max(0,count-1));showPage();performClick();return true;
+         }
+         return true;
+       }
+       @Override public boolean performClick(){super.performClick();return true;}
+    }
+    private void openRoundPlayer(MessageDb.Attachment a){
+       resolveMedia(a.path,uri->{
+          Intent intent=new Intent(this,RoundPlayerActivity.class);
+          intent.setData(uri);intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+          try{startActivity(intent);}catch(Exception e){toast("Не удалось открыть видеокружочек");}
+       });
+    }
+    private void closeFloatingRound(){
+       if(floatingPanel!=null){FrameLayout p=floatingPanel;floatingPanel=null;stopPlayback();root.removeView(p);}
+    }
+    private void showFloatingRound(MessageDb.Attachment a){
+       closeFloatingRound();
+       FrameLayout panel=new FrameLayout(this);floatingPanel=panel;
+       FrameLayout.LayoutParams pos=new FrameLayout.LayoutParams(px(157),px(160),Gravity.END|Gravity.BOTTOM);
+       pos.rightMargin=px(12);pos.bottomMargin=px(105);root.addView(panel,pos);
+       FrameLayout round=new FrameLayout(this);round.setBackground(shape(CHIP,100));
+       round.setOutlineProvider(new ViewOutlineProvider(){@Override public void getOutline(View view,Outline o){o.setOval(0,0,view.getWidth(),view.getHeight());}});
+       round.setClipToOutline(true);
+       panel.addView(round,new FrameLayout.LayoutParams(px(140),px(140),Gravity.BOTTOM|Gravity.END));
+       ImageView preview=new ImageView(this);preview.setScaleType(ImageView.ScaleType.CENTER_CROP);round.addView(preview,new FrameLayout.LayoutParams(-1,-1));loadThumbnail(a.path,"round",preview);
+       TextView play=text("▶",32,FG);play.setGravity(Gravity.CENTER);round.addView(play,new FrameLayout.LayoutParams(-1,-1));
+       round.setOnClickListener(v->startInlineRound(a.path,round,preview,play));
+       round.setOnLongClickListener(v->{mediaActions(a);return true;});
+       TextView close=text("✕",20,FG);close.setBackground(shape(0xffa43b47,100));close.setGravity(Gravity.CENTER);
+       panel.addView(close,new FrameLayout.LayoutParams(px(35),px(35),Gravity.TOP|Gravity.START));close.setOnClickListener(v->closeFloatingRound());
+       panel.setOnTouchListener(new View.OnTouchListener(){float x,y,startX,startY;
+         public boolean onTouch(View v,MotionEvent e){if(e.getActionMasked()==MotionEvent.ACTION_DOWN){x=e.getRawX();y=e.getRawY();startX=v.getTranslationX();startY=v.getTranslationY();return true;}
+           if(e.getActionMasked()==MotionEvent.ACTION_MOVE){v.setTranslationX(startX+e.getRawX()-x);v.setTranslationY(startY+e.getRawY()-y);return true;}return false;}
+       });
+       startInlineRound(a.path,round,preview,play);
+    }
+
     @Override protected void onPause(){super.onPause();stopPlayback();}
     @Override protected void onDestroy(){stopPlayback();worker.execute(()->db.close());worker.shutdown();mediaWorker.shutdown();super.onDestroy();}
 }
