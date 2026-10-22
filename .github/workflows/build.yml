@@ -18,6 +18,8 @@ jobs:
           base64 -d source.tar.xz.b64 > project.tar.xz
           echo "5734c118086d367157310cc2a67a7965d28de62424383a3c90b5c03b1e4920ee  project.tar.xz" | sha256sum -c -
           tar -xJf project.tar.xz
+      - name: Fix nested Entry generic type in source
+        run: sed -i 's/Map.Entry<String,Map<String,Entry>>/java.util.Map.Entry<String,Map<String,Entry>>/' app/src/main/java/org/openarchive/telegram/DocumentFolder.java
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
