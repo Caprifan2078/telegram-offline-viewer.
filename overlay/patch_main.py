@@ -33,11 +33,7 @@ insert="""    private void confirmExternalPlayer(Uri contentUri, String mime) {
         super.onPause();
     }
 
-    @Override protected void onDestroy() {
-        if (media != null) media.stopPlayback();
-        io.shutdownNow();
-        super.onDestroy();
-    }
+
 
 """
 s=s.replace("    private void hideMedia() {",insert+"    private void hideMedia() {")
