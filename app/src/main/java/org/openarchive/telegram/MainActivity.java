@@ -157,25 +157,67 @@ public class MainActivity extends Activity {
             else if(x.contains("Цвета"))participantSettings();else chatPicker();return true;
         });menu.show();
     }
+    /** Compact Telegram-like pinned preview: tap the message to jump, arrow to switch, cross to unpin. */
     private void renderPinnedBar(){
-        pinnedBar.removeAllViews();if(!screen.equals("chat"))return;
-        worker.execute(()->{List<MessageDb.Item> pins=db.pinned();runOnUiThread(()->{
-            if(!screen.equals("chat"))return;pinnedBar.removeAllViews();if(pins.isEmpty())return;
-            MessageDb.Item top=pins.get(0);
-            TextView t=text("📌 "+clip(top.body==null||top.body.isEmpty()?"Медиа":top.body,48)+" · "+pins.size()+" закрепл.",12,ACCENT);
-            t.setPadding(px(12),px(8),px(12),px(8));t.setBackground(shape(PANEL,10));pinnedBar.addView(t,p(-1,37));
-            t.setOnClickListener(v->{
-                int idx=0;for(int k=0;k<pins.size();k++)if(pins.get(k).id==pinnedFocus){idx=(k+1)%pins.size();break;}
-                pinnedFocus=pins.get(idx).id;jump(pinnedFocus,"");
-            });t.setOnLongClickListener(v->{showPinList();return true;});
-        });});
+        pinnedBar.removeAllViews();
+        if(!screen.equals("chat"))return;
+        final String key=activeKey;final int token=loadToken;
+        worker.execute(()->{
+            List<MessageDb.Item> pins=db.pinned();
+            runOnUiThread(()->{
+                if(!screen.equals("chat")||!key.equals(activeKey)||token!=loadToken)return;
+                pinnedBar.removeAllViews();if(pins.isEmpty()){pinnedFocus=-1;return;}
+                int selected=0;
+                for(int i=0;i<pins.size();i++)if(pins.get(i).id==pinnedFocus){selected=i;break;}
+                MessageDb.Item current=pins.get(selected);pinnedFocus=current.id;
+                LinearLayout bar=row();bar.setPadding(px(8),px(5),px(6),px(5));
+                bar.setBackground(shape(0xff1b3548,12));
+                LinearLayout.LayoutParams outer=p(-1,62);outer.setMargins(px(2),px(3),px(2),px(5));pinnedBar.addView(bar,outer);
+                TextView stripe=text("┃",28,ACCENT);stripe.setGravity(Gravity.CENTER);
+                bar.addView(stripe,p(16,49));
+                LinearLayout info=column();info.setGravity(Gravity.CENTER_VERTICAL);
+                info.setPadding(px(4),0,px(4),0);
+                bar.addView(info,new LinearLayout.LayoutParams(0,-1,1));
+                TextView caption=text("📌 Закреплённое сообщение  ·  "+(selected+1)+"/"+pins.size(),11,ACCENT);
+                caption.setTypeface(null,Typeface.BOLD);info.addView(caption);
+                String summary=current.body==null||current.body.trim().isEmpty()?"Медиафайл":current.body;
+                TextView snippet=text(clip(summary,78),13,FG);snippet.setSingleLine(true);info.addView(snippet);
+                info.setOnClickListener(v->jump(current.id,""));
+                TextView next=text("⌄",27,FG);next.setGravity(Gravity.CENTER);
+                bar.addView(next,p(34,45));next.setOnClickListener(v->{
+                    pinnedFocus=pins.get((selected+1)%pins.size()).id;renderPinnedBar();
+                });
+                TextView unpin=text("✕",20,SUB);unpin.setGravity(Gravity.CENTER);bar.addView(unpin,p(32,45));
+                unpin.setOnClickListener(v->unpinMessage(current.id));
+                bar.setOnLongClickListener(v->{showPinList();return true;});
+            });
+        });
+    }
+    private void unpinMessage(long id){
+        worker.execute(()->{
+            if(db.isPinned(id))db.togglePinned(id);
+            runOnUiThread(()->{if(pinnedFocus==id)pinnedFocus=-1;toast("Сообщение откреплено");renderPinnedBar();});
+        });
+    }
+    private void pinnedItemMenu(MessageDb.Item message){
+        new AlertDialog.Builder(this).setTitle("📌 Закреплённое сообщение")
+            .setItems(new String[]{"↗ Перейти к сообщению","Открепить сообщение"},(d,choice)->{
+                if(choice==0){pinnedFocus=message.id;jump(message.id,"");}
+                else unpinMessage(message.id);
+            }).show();
     }
     private void showPinList(){
-        worker.execute(()->{List<MessageDb.Item> pins=db.pinned();runOnUiThread(()->{
-            if(pins.isEmpty()){toast("Нет закреплённых сообщений");return;}
-            String[] labels=new String[pins.size()];for(int i=0;i<pins.size();i++)labels[i]=clock(pins.get(i).date)+" · "+clip(pins.get(i).body,58);
-            new AlertDialog.Builder(this).setTitle("Закреплённые сообщения").setItems(labels,(d,i)->jump(pins.get(i).id,"")).show();
-        });});
+        worker.execute(()->{
+            List<MessageDb.Item> pins=db.pinned();
+            runOnUiThread(()->{
+                if(pins.isEmpty()){toast("Нет закреплённых сообщений");return;}
+                String[] labels=new String[pins.size()];
+                for(int i=0;i<pins.size();i++)
+                    labels[i]=(i+1)+". "+day(pins.get(i).date)+" · "+clip(pins.get(i).body==null||pins.get(i).body.isEmpty()?"Медиа":pins.get(i).body,65);
+                new AlertDialog.Builder(this).setTitle("Закреплённые сообщения")
+                    .setItems(labels,(d,i)->pinnedItemMenu(pins.get(i))).show();
+            });
+        });
     }
     private void createUi(){
         root=new FrameLayout(this);
