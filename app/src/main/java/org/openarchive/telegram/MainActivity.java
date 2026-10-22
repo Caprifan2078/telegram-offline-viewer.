@@ -5,6 +5,9 @@ import android.app.AlertDialog;
 import android.app.DatePickerDialog;
 import android.app.Dialog;
 import android.content.Intent;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.view.MotionEvent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -80,6 +83,9 @@ public class MainActivity extends Activity {
     private MessageDb db;private DocumentFolder folder;
     private JSONArray archives=new JSONArray();private String activeKey="default",activeName="Архив";
     private SeekBar timeline;private LinearLayout pinnedBar;
+    private FrameLayout root, floatingPanel;
+    private VerticalTimeline verticalTimeline;
+    private final int[] participantColors={0xff315c79,0xff665184,0xff326c65,0xff75513f,0xff5d607f,0xff724d68,0xff52683a,0xff426884};
     private LinearLayout base,list,filterBar,bottomNav,searchArea,toolArea;
     private ScrollView scroll;private TextView title,subtitle,status,pageLabel;
     private EditText searchInput,authorInput;private CheckBox mediaOnly;
@@ -130,7 +136,7 @@ public class MainActivity extends Activity {
     private void activateArchive(String key){
         if(importing){toast("Импорт ещё идёт");return;}
         JSONObject choice=null;for(int i=0;i<archives.length();i++){JSONObject o=archives.optJSONObject(i);if(o!=null&&key.equals(o.optString("key")))choice=o;}
-        if(choice==null)return;stopPlayback();++loadToken;activeKey=key;activeName=choice.optString("name","Архив");saveRegistry();
+        if(choice==null)return;closeFloatingRound();stopPlayback();++loadToken;activeKey=key;activeName=choice.optString("name","Архив");saveRegistry();
         if(db!=null)db.close();db=new MessageDb(this,activeKey);
         String path=choice.optString("tree","");folder=path.isEmpty()?null:new DocumentFolder(getContentResolver(),Uri.parse(path));
         chatOffset=searchOffset=mediaOffset=favOffset=0;screen="chat";returnScreen="";showPage();
@@ -143,12 +149,12 @@ public class MainActivity extends Activity {
         }).show();
     }
     private void moreMenu(View anchor){
-        PopupMenu menu=new PopupMenu(this,anchor);menu.getMenu().add("⇈ В начало");menu.getMenu().add("⇊ В конец");menu.getMenu().add("📌 Закреплённые");menu.getMenu().add("Мои архивы");
+        PopupMenu menu=new PopupMenu(this,anchor);menu.getMenu().add("⇈ В начало");menu.getMenu().add("⇊ В конец");menu.getMenu().add("📌 Закреплённые");menu.getMenu().add("Мои архивы");menu.getMenu().add("Цвета участников");
         menu.setOnMenuItemClickListener(item->{String x=item.getTitle().toString();
             if(x.contains("начало")){chatOffset=0;showPage();}
             else if(x.contains("конец")){worker.execute(()->{int n=db.totalMessages();runOnUiThread(()->{chatOffset=Math.max(0,n-PAGE);showPage();});});}
             else if(x.contains("Закрепл"))showPinList();
-            else chatPicker();return true;
+            else if(x.contains("Цвета"))participantSettings();else chatPicker();return true;
         });menu.show();
     }
     private void renderPinnedBar(){
@@ -158,7 +164,10 @@ public class MainActivity extends Activity {
             MessageDb.Item top=pins.get(0);
             TextView t=text("📌 "+clip(top.body==null||top.body.isEmpty()?"Медиа":top.body,48)+" · "+pins.size()+" закрепл.",12,ACCENT);
             t.setPadding(px(12),px(8),px(12),px(8));t.setBackground(shape(PANEL,10));pinnedBar.addView(t,p(-1,37));
-            t.setOnClickListener(v->jump(top.id,""));t.setOnLongClickListener(v->{showPinList();return true;});
+            t.setOnClickListener(v->{
+                int idx=0;for(int k=0;k<pins.size();k++)if(pins.get(k).id==pinnedFocus){idx=(k+1)%pins.size();break;}
+                pinnedFocus=pins.get(idx).id;jump(pinnedFocus,"");
+            });t.setOnLongClickListener(v->{showPinList();return true;});
         });});
     }
     private void showPinList(){
@@ -169,13 +178,15 @@ public class MainActivity extends Activity {
         });});
     }
     private void createUi(){
-        base=column();base.setBackgroundColor(BG);base.setPadding(px(9),px(5),px(9),px(6));setContentView(base);
+        root=new FrameLayout(this);
+        base=column();base.setBackgroundColor(BG);base.setPadding(px(9),px(5),px(9),px(6));
+        root.addView(base,new FrameLayout.LayoutParams(-1,-1));setContentView(root);
         LinearLayout head=row();base.addView(head,p(-1,55));
         TextView logo=text("◉",32,ACCENT);head.addView(logo,p(43,-2));
         LinearLayout headings=column();head.addView(headings,new LinearLayout.LayoutParams(0,-2,1));
         title=text("Telegram Archive",19,FG);title.setTypeface(null,Typeface.BOLD);headings.addView(title);
         subtitle=text("Личный архив · офлайн",11,SUB);headings.addView(subtitle);
-        Button settings=btn("⚙");head.addView(settings,p(39,40));settings.setOnClickListener(v->identityDialog());
+        Button settings=btn("⚙");head.addView(settings,p(39,40));settings.setOnClickListener(v->settingsMenu());
         folderButton=btn("＋");head.addView(folderButton,p(43,40));folderButton.setOnClickListener(v->chooseFolder());
         Button chats=btn("Чаты ▾");head.addView(chats,p(75,40));chats.setOnClickListener(v->chatPicker());
         bottomNav=row();base.addView(bottomNav,p(-1,51));
@@ -186,7 +197,11 @@ public class MainActivity extends Activity {
         searchArea=column();toolArea.addView(searchArea,p(-1,-2));
         status=text("",11,SUB);status.setPadding(px(8),px(4),px(8),px(6));status.setMaxLines(3);base.addView(status,p(-1,-2));
         scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(true);
-        base.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        FrameLayout scrollHost=new FrameLayout(this);
+        base.addView(scrollHost,new LinearLayout.LayoutParams(-1,0,1));
+        scrollHost.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
+        verticalTimeline=new VerticalTimeline();
+        scrollHost.addView(verticalTimeline,new FrameLayout.LayoutParams(px(25),-1,Gravity.END));
         list=column();list.setPadding(px(3),px(6),px(3),px(14));scroll.addView(list);
         LinearLayout seekRow=row();base.addView(seekRow,p(-1,30));
         TextView seekLabel=text("↕",17,ACCENT);seekRow.addView(seekLabel,p(29,26));
@@ -206,7 +221,7 @@ public class MainActivity extends Activity {
     private void addTab(String label,String key){
         TextView t=text(label,12,SUB);t.setGravity(Gravity.CENTER);t.setTag(key);
         bottomNav.addView(t,new LinearLayout.LayoutParams(0,px(45),1));
-        t.setOnClickListener(v->{stopPlayback();screen=key;returnScreen="";highlightId=-1;showPage();});
+        t.setOnClickListener(v->{if(floatingPanel==null)stopPlayback();screen=key;returnScreen="";highlightId=-1;showPage();});
     }
     private void refreshTabs(){
         for(int i=0;i<bottomNav.getChildCount();i++){
@@ -312,7 +327,7 @@ public class MainActivity extends Activity {
         }).setNegativeButton("Отмена",null).show();
     }
     private void importArchive(){
-        if(folder==null||importing)return;stopPlayback();importing=true;folderButton.setEnabled(false);status.setText("Создаю локальную базу, не копируя медиа…");
+        if(folder==null||importing)return;closeFloatingRound();stopPlayback();importing=true;folderButton.setEnabled(false);status.setText("Создаю локальную базу, не копируя медиа…");
         list.removeAllViews();DocumentFolder current=folder;
         worker.execute(()->{
             try{TelegramImporter.importFiles(getContentResolver(),current,db,s->runOnUiThread(()->status.setText(s)));info="Импорт завершён";}
@@ -324,7 +339,7 @@ public class MainActivity extends Activity {
     private int getLimit(){return screen.equals("media")?MEDIA_PAGE:PAGE;}
     private void setOffset(int x){switch(screen){case "media":mediaOffset=x;break;case "search":searchOffset=x;break;case "favorites":favOffset=x;break;default:chatOffset=x;}}
     private void showPage(){
-        if(importing)return;stopPlayback();refreshTabs();configureBars();renderPinnedBar();int token=++loadToken;
+        if(importing)return;if(floatingPanel==null)stopPlayback();refreshTabs();configureBars();renderPinnedBar();int token=++loadToken;
         final String tab=screen,kind=mediaKind,search=q,who=byAuthor;
         final int requested=getOffset();final boolean deepMode=deep,hasMedia=onlyMedia;
         backPage.setEnabled(false);nextPage.setEnabled(false);status.setText("Загружаю…");
@@ -344,6 +359,8 @@ public class MainActivity extends Activity {
                     int shown=gallery?attachments.size():messages.size();
                     timeline.setVisibility("chat".equals(tab)?View.VISIBLE:View.INVISIBLE);
                     timeline.setMax(Math.max(0,count-1));if("chat".equals(tab))timeline.setProgress(pos);
+                    verticalTimeline.setVisibility("chat".equals(tab)?View.VISIBLE:View.GONE);
+                    if("chat".equals(tab))verticalTimeline.setPosition(pos,count);
                     pageLabel.setText(count==0?"Нет данных":(pos+1)+"–"+(pos+shown)+" / "+count);
                     backPage.setEnabled(pos>0);nextPage.setEnabled(pos+shown<count);
                     if(count==0)status.setText(gallery?"Таких медиа пока нет. Попробуй повторный импорт исходных HTML.":
@@ -388,16 +405,19 @@ public class MainActivity extends Activity {
             LinearLayout line=row();line.setGravity(own?Gravity.RIGHT:Gravity.LEFT);
             LinearLayout.LayoutParams linep=p(-1,-2);linep.setMargins(px(2),px(2),px(2),px(5));list.addView(line,linep);
             if(!own){TextView avatar=text(initial(m.author),14,FG);avatar.setTypeface(null,Typeface.BOLD);
-                avatar.setGravity(Gravity.CENTER);avatar.setBackground(shape(0xff456884,100));
+                avatar.setGravity(Gravity.CENTER);avatar.setBackground(shape(authorColor(m.author),100));
                 LinearLayout.LayoutParams ap=p(32,32);ap.rightMargin=px(7);line.addView(avatar,ap);}
             LinearLayout bubble=column();bubble.setPadding(px(13),px(8),px(13),px(9));
-            bubble.setBackground(gradient(m.id==highlightId?0xff477c91:own?OUTGOING:INCOMING,m.id==highlightId?0xff33576b:own?0xff1f4745:0xff1c2b41,16));
+            int chosenColor=authorColor(m.author);
+            bubble.setBackground(gradient(m.id==highlightId?0xff477c91:chosenColor,
+                    m.id==highlightId?0xff33576b:darken(chosenColor),17));
             LinearLayout.LayoutParams bp=p(-2,-2);line.addView(bubble,bp);
             int maxWidth=getResources().getDisplayMetrics().widthPixels-px(93);
             if(maxWidth<px(190))maxWidth=px(240);final int mw=maxWidth;
             bubble.setOnLongClickListener(v->{messageActions(m);return true;});
             String author=m.author==null||m.author.isEmpty()?"Неизвестный отправитель":m.author;
-            TextView from=text(author,12,own?0xff9fe1c5:ACCENT);from.setMaxWidth(mw);from.setTypeface(null,Typeface.BOLD);bubble.addView(from);
+            TextView from=text(author,12,0xffe8f6ff);from.setMaxWidth(mw);from.setTypeface(null,Typeface.BOLD);bubble.addView(from);
+            from.setOnLongClickListener(v->{pickAuthorColor(author);return true;});
             if(m.body!=null&&!m.body.isEmpty()){
                 TextView body=text("",15,FG);body.setMaxWidth(mw);body.setText(highlighted(m.body,results?q:""));
                 body.setPadding(0,px(5),0,px(4));body.setLineSpacing(px(2),1.0f);bubble.addView(body);
@@ -463,7 +483,7 @@ public class MainActivity extends Activity {
     }
     private String mediaLabel(String k){switch(k){case "round":return "Видеокружочек";case "voice":return "Голосовое";case "video":return "Видео";case "audio":return "Аудио / музыка";case "image":return "Фото";case "gif":return "GIF";case "sticker":return "Стикер";default:return "Файл";}}
     private View mediaTile(MessageDb.Attachment a,boolean gallery){
-        if(a.kind.equals("round"))return circle(a,gallery?124:190);
+        if(a.kind.equals("round"))return circle(a,gallery?124:190,!gallery);
         if(a.kind.equals("voice")||a.kind.equals("audio"))return voice(a,gallery);
         if(a.kind.equals("image")||a.kind.equals("gif")||a.kind.equals("sticker")||a.kind.equals("video")){
             FrameLayout box=new FrameLayout(this);int size=gallery?84:190;
@@ -479,7 +499,7 @@ public class MainActivity extends Activity {
         file.setOnLongClickListener(v->{mediaActions(a);return true;});return file;
     }
     private String filename(String path){int p=path.lastIndexOf('/');return p<0?path:path.substring(p+1);}
-    private View circle(MessageDb.Attachment a,int size){
+    private View circle(MessageDb.Attachment a,int size,boolean chatCircle){
         FrameLayout container=new FrameLayout(this);container.setBackground(shape(0xff31526c,100));
         ViewOutlineProvider round=new ViewOutlineProvider(){@Override public void getOutline(View v,Outline o){o.setOval(0,0,v.getWidth(),v.getHeight());}};
         container.setOutlineProvider(round);container.setClipToOutline(true);
@@ -487,9 +507,16 @@ public class MainActivity extends Activity {
         container.addView(thumbnail,new FrameLayout.LayoutParams(-1,-1));loadThumbnail(a.path,"round",thumbnail);
         TextView overlay=text("▶",size>100?37:27,FG);overlay.setGravity(Gravity.CENTER);
         overlay.setBackgroundColor(0x42000000);container.addView(overlay,new FrameLayout.LayoutParams(-1,-1));
-        container.setOnClickListener(v->startInlineRound(a.path,container,thumbnail,overlay));
+        LinearLayout wrap=column();wrap.setGravity(Gravity.CENTER_HORIZONTAL);
+        container.setOnClickListener(v->{
+            if(chatCircle&&container.getLayoutParams()!=null&&container.getLayoutParams().width<px(232)){
+                int dim=Math.min(252,(getResources().getDisplayMetrics().widthPixels/Math.max(1,px(1)))-110);
+                container.setLayoutParams(p(dim,dim));wrap.requestLayout();
+            }
+            startInlineRound(a.path,container,thumbnail,overlay);
+        });
         container.setOnLongClickListener(v->{mediaActions(a);return true;});
-        LinearLayout wrap=column();wrap.setGravity(Gravity.CENTER_HORIZONTAL);wrap.addView(container,p(size,size));
+        wrap.addView(container,p(size,size));
         TextView duration=text("00:00",11,SUB);duration.setGravity(Gravity.CENTER);wrap.addView(duration,p(size,23));
         loadDuration(a.path,duration);return wrap;
     }
@@ -504,11 +531,21 @@ public class MainActivity extends Activity {
         outer.setOnLongClickListener(v->{mediaActions(a);return true;});return outer;
     }
     private void mediaActions(MessageDb.Attachment a){
-        String[] names={"▶ Воспроизвести / открыть","↗ Перейти к сообщению","☆ Отметить сообщение","⛶ Открыть полностью"};
+        String[] names=a.kind.equals("round")?
+            new String[]{"▶ Плавающий кружочек","⛶ Полный экран / PiP","↗ Перейти к сообщению","☆ В избранное","Открыть внешним плеером"}:
+            new String[]{"▶ Воспроизвести / открыть","↗ Перейти к сообщению","☆ Отметить сообщение","⛶ Открыть полностью"};
         new AlertDialog.Builder(this).setTitle(mediaLabel(a.kind)+" · "+day(a.date)).setItems(names,(dlg,which)->{
-            if(which==0||which==3)openMedia(a);
-            if(which==1)jump(a.messageId,"media");
-            if(which==2)toggleStar(a.messageId);
+            if(a.kind.equals("round")){
+                if(which==0)showFloatingRound(a);
+                else if(which==1)openRoundPlayer(a);
+                else if(which==2)jump(a.messageId,screen.equals("media")?"media":"");
+                else if(which==3)toggleStar(a.messageId);
+                else resolveMedia(a.path,uri->external(uri,a.path));
+            }else{
+                if(which==0||which==3)openMedia(a);
+                if(which==1)jump(a.messageId,"media");
+                if(which==2)toggleStar(a.messageId);
+            }
         }).show();
     }
     private void jump(long id,String source){
@@ -538,7 +575,8 @@ public class MainActivity extends Activity {
         });
     }
     private void openMedia(MessageDb.Attachment a){
-        if(a.kind.equals("video")||a.kind.equals("round"))resolveMedia(a.path,this::fullVideo);
+        if(a.kind.equals("round")){openRoundPlayer(a);return;}
+        if(a.kind.equals("video"))resolveMedia(a.path,this::fullVideo);
         else if(a.kind.equals("voice")||a.kind.equals("audio"))resolveMedia(a.path,uri->external(uri,a.path));
         else resolveMedia(a.path,uri->external(uri,a.path));
     }
