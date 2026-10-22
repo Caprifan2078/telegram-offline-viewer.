@@ -127,12 +127,33 @@ class MessageDb extends SQLiteOpenHelper {
     boolean isFavorite(long id){try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM favorites WHERE message_id=?",new String[]{String.valueOf(id)})){return c.moveToFirst();}}
     int positionFor(long id){try(Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM messages WHERE id < ?",new String[]{String.valueOf(id)})){return c.moveToFirst()?c.getInt(0):-1;}}
     boolean hasMessage(long id){try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM messages WHERE id=?",new String[]{String.valueOf(id)})){return c.moveToFirst();}}
-    int positionForDate(int y,int m,int d){
-        String ru=String.format(Locale.ROOT,"%02d.%02d.%04d",d,m,y),iso=String.format(Locale.ROOT,"%04d-%02d-%02d",y,m,d);
-        try(Cursor c=getReadableDatabase().rawQuery("SELECT id FROM messages WHERE date_text LIKE ? OR date_text LIKE ? ORDER BY id LIMIT 1",new String[]{"%"+ru+"%","%"+iso+"%"})){
-            return c.moveToFirst()?positionFor(c.getLong(0)):-1;
-        }
+    /** A date lookup is not limited to days with messages: opens the first message on/after
+     * the requested day, or the last existing message if the date is beyond the archive. */
+    static final class DateMatch {
+        final int position; final String day;
+        DateMatch(int pos,String date){position=pos;day=date;}
     }
+    DateMatch nearestDate(int y,int m,int d){
+        String wanted=String.format(Locale.ROOT,"%04d-%02d-%02d",y,m,d);
+        // Telegram Desktop can export dd.MM.yyyy HH:mm:ss or ISO yyyy-MM-dd.
+        String normalized="CASE WHEN date_text GLOB '??.??.????*' THEN "+
+            "substr(date_text,7,4)||'-'||substr(date_text,4,2)||'-'||substr(date_text,1,2) "+
+            "WHEN date_text GLOB '????-??-??*' THEN substr(date_text,1,10) ELSE NULL END";
+        String base="SELECT id, "+normalized+" AS archive_day FROM messages WHERE "+normalized+" IS NOT NULL";
+        long id=-1;String found="";
+        String sql=base+" AND "+normalized+" >= ? ORDER BY archive_day ASC,id ASC LIMIT 1";
+        try(Cursor c=getReadableDatabase().rawQuery(sql,new String[]{wanted})){
+            if(c.moveToFirst()){id=c.getLong(0);found=c.getString(1);}
+        }
+        if(id<0){
+            sql=base+" ORDER BY archive_day DESC,id DESC LIMIT 1";
+            try(Cursor c=getReadableDatabase().rawQuery(sql,null)){
+                if(c.moveToFirst()){id=c.getLong(0);found=c.getString(1);}
+            }
+        }
+        return id<0?new DateMatch(-1,""):new DateMatch(positionFor(id),found);
+    }
+    int positionForDate(int y,int m,int d){return nearestDate(y,m,d).position;}
     private String mediaWhere(String kind){
         switch(kind){
             case "all":return "";
