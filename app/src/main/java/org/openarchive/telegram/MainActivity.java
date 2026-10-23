@@ -101,7 +101,7 @@ public class MainActivity extends Activity {
     private String screen="chat",mediaKind="all",q="",byAuthor="",mine="",returnScreen="";
     private boolean deep=false,onlyMedia=false,importing=false;
     private int chatOffset=0,searchOffset=0,mediaOffset=0,favOffset=0,total=0,loadToken=0;
-    private long highlightId=-1;private long lastVisibleMessage=-1;private int lastVisibleTop=0;private final Map<Long,View> renderedMessageViews=new HashMap<>();private long pendingRestoreId=-1;private int pendingRestoreTop=0;private boolean restoringBackup=false;
+    private long highlightId=-1;private long lastVisibleMessage=-1;private int lastVisibleTop=0;private final Map<Long,View> renderedMessageViews=new HashMap<>();private long pendingRestoreId=-1;private int pendingRestoreTop=0;private boolean restoringBackup=false;private boolean fullBackupMode=true;
     private String info="";
     private MediaPlayer player;private String playingPath="";private TextureView activeTexture;
     private Runnable progressUpdater;private MessageDb.Attachment playingAttachment;private LinearLayout playerStrip;private TextView playerText;private Button playerPause;private FrameLayout inlineHolder;private int floatingStart=0;
@@ -1368,34 +1368,54 @@ public class MainActivity extends Activity {
           else if(i==4)backupPicker();else restorePicker();
        }).show();}
     private void backupPicker(){
-        new AlertDialog.Builder(this).setTitle("Резервная копия").setMessage("В ZIP сохраняются тексты всех чатов, избранные и закреплённые сообщения, заметки и настройки. Видео, фото и аудио не копируются: исходные папки Telegram нужно хранить отдельно. Копия не шифруется — сохраняй её в надёжном месте.")
-            .setNegativeButton("Отмена",null).setPositiveButton("Выбрать место",(d,w)->{
-                Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.setType("application/zip");i.addCategory(Intent.CATEGORY_OPENABLE);
-                i.putExtra(Intent.EXTRA_TITLE,"TelegramArchive-backup.zip");startActivityForResult(i,41);
-            }).show();
+        new AlertDialog.Builder(this).setTitle("Экспорт переписок")
+            .setMessage("Полный архив сохраняет исходные HTML, фото, видео, видеосообщения, голосовые, файлы, избранное, закрепления и заметки. Большой ZIP может занять более 9 ГБ. Он не зашифрован: храни его в защищённом месте.")
+            .setItems(new String[]{"Полный архив: чаты + все исходные медиа","Компактная копия: переписки, избранное и настройки"},
+                (dialog,choice)->{
+                    fullBackupMode=choice==0;
+                    Intent pick=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    pick.setType("application/zip");pick.addCategory(Intent.CATEGORY_OPENABLE);
+                    pick.putExtra(Intent.EXTRA_TITLE, "TelegramArchive-"+(fullBackupMode?"FULL":"METADATA")+".zip");
+                    startActivityForResult(pick,41);
+                }).show();
     }
     private void restorePicker(){
-        new AlertDialog.Builder(this).setTitle("Восстановление").setMessage("Архивы добавятся как новые, существующие чаты, избранное и закрепления сохранятся. Для медиа понадобится заново выбрать исходные папки. Используй только доверенные копии.")
+        new AlertDialog.Builder(this).setTitle("Восстановить переписки")
+            .setMessage("Выбери ранее сохранённый архив приложения. Полный ZIP восстановит также фото, видео, кружочки и файлы. Старые переписки не заменяются.")
             .setNegativeButton("Отмена",null).setPositiveButton("Выбрать ZIP",(d,w)->{
-                Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("application/zip");i.addCategory(Intent.CATEGORY_OPENABLE);
-                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivityForResult(i,42);
+                Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.setType("application/zip");intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivityForResult(intent,42);
             }).show();
     }
     private void backupAction(Uri uri,boolean restore){
-        if(restoringBackup||importing)return;restoringBackup=true;
-        status.setText(restore?"Восстанавливаю…":"Создаю резервную копию…");
+        if(restoringBackup||importing)return;
+        restoringBackup=true;status.setText(restore?"Восстанавливаю…":"Создаю резервную копию…");
         worker.execute(()->{
             try{
                 SharedPreferences prefs=getPreferences(MODE_PRIVATE);
                 if(restore){
-                    int chats=ArchiveBackup.restore(this,prefs,uri,message->runOnUiThread(()->status.setText(message)));
-                    runOnUiThread(()->{restoringBackup=false;loadArchiveRegistry();home=true;screen="chat";showPage();toast("Восстановлено чатов: "+chats);});
+                    int count;
+                    // Distinguish formats using the prefix of ZIP entries, not the file name.
+                    boolean full=false;
+                    try(InputStream input=getContentResolver().openInputStream(uri);
+                        java.util.zip.ZipInputStream stream=new java.util.zip.ZipInputStream(new java.io.BufferedInputStream(input))){
+                        java.util.zip.ZipEntry first=stream.getNextEntry();
+                        full=first!=null&&first.getName().equals("metadata.zip");
+                    }
+                    if(full)count=FullBackup.restore(this,prefs,uri,msg->runOnUiThread(()->status.setText(msg)));
+                    else count=ArchiveBackup.restore(this,prefs,uri,msg->runOnUiThread(()->status.setText(msg)));
+                    final int restored=count;
+                    runOnUiThread(()->{restoringBackup=false;loadArchiveRegistry();home=true;screen="chat";showPage();toast("Восстановлено чатов: "+restored);});
                 }else{
-                    saveReadingProgress();
-                    ArchiveBackup.write(this,prefs,uri,message->runOnUiThread(()->status.setText(message)));
-                    runOnUiThread(()->{restoringBackup=false;toast("Резервная копия сохранена");});
+                    // UI position is saved by the existing navigation handler; SQL backup is checkpointed before export.
+                    if(fullBackupMode)FullBackup.export(this,prefs,uri,msg->runOnUiThread(()->status.setText(msg)));
+                    else ArchiveBackup.write(this,prefs,uri,msg->runOnUiThread(()->status.setText(msg)));
+                    runOnUiThread(()->{restoringBackup=false;toast("Резервная копия создана");});
                 }
-            }catch(Exception e){runOnUiThread(()->{restoringBackup=false;status.setText("Ошибка резервной копии: "+e.getMessage());});}
+            }catch(Exception e){
+                runOnUiThread(()->{restoringBackup=false;status.setText("Ошибка резервной копии: "+e.getMessage());});
+            }
         });
     }
     private final class VerticalTimeline extends View {
