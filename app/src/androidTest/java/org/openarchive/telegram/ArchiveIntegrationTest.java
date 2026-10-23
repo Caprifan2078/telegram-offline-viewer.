@@ -123,7 +123,7 @@ public class ArchiveIntegrationTest {
             assertArrayEquals(sample,found);
             Log.i("TG_ARCHIVE_BENCH","synthetic_full_backup_export_ms="+exportMs+
                 " archive_bytes="+backup.length()+" media_file_bytes="+sample.length);
-            ArchiveFileImport.deleteTree(restoredFolder.getParentFile().getParentFile());
+            ArchiveFileImport.deleteTree(restoredFolder.getParentFile().getParentFile().getName().startsWith("restore-")?restoredFolder.getParentFile().getParentFile():restoredFolder);
         }finally{
             old.close();ctx.deleteDatabase("telegram_"+key+".db");
             if(restoredKey!=null)ctx.deleteDatabase("telegram_"+restoredKey+".db");
