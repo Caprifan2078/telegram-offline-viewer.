@@ -367,6 +367,12 @@ public class MainActivity extends Activity {
         Button settings=btn("⚙");head.addView(settings,p(38,42));settings.setOnClickListener(v->settingsMenu());
         folderButton=btn("＋");folderButton.setTextSize(22);head.addView(folderButton,p(41,42));
         folderButton.setOnClickListener(v->chooseFolder());
+        playerStrip=row();playerStrip.setVisibility(View.GONE);playerStrip.setBackground(shape(0xff244159,13));base.addView(playerStrip,p(-1,45));
+        playerText=text("Медиа",12,FG);playerStrip.addView(playerText,new LinearLayout.LayoutParams(0,-2,1));
+        Button prev=btn("⏮");playerStrip.addView(prev,p(38,40));prev.setOnClickListener(v->playAdjacent(false));
+        playerPause=btn("⏸");playerStrip.addView(playerPause,p(38,40));playerPause.setOnClickListener(v->toggleActivePlayback());
+        Button next=btn("⏭");playerStrip.addView(next,p(38,40));next.setOnClickListener(v->playAdjacent(true));
+        Button close=btn("✕");playerStrip.addView(close,p(38,40));close.setOnClickListener(v->{closeFloatingRound();stopPlayback();});
         bottomNav=row();base.addView(bottomNav,p(-1,51));
         addTab("💬 Чат","chat");addTab("▦ Медиа","media");addTab("★ Избранное","favorites");addTab("⌕ Поиск","search");
         toolArea=column();base.addView(toolArea,p(-1,-2));
@@ -781,7 +787,7 @@ public class MainActivity extends Activity {
                 }
                 wrap.requestLayout();
             }
-            startInlineRound(a.path,holder,preview,overlay);
+            playingAttachment=a;startInlineRound(a.path,holder,preview,overlay);
         });
         holder.setOnLongClickListener(v->{mediaActions(a);return true;});
         return wrap;
@@ -848,7 +854,7 @@ public class MainActivity extends Activity {
         });
     }
     private void openMedia(MessageDb.Attachment a){
-        if(a.kind.equals("round")){openRoundPlayer(a);return;}
+        if(a.kind.equals("round")){showFloatingRound(a);return;}
         if(a.kind.equals("video"))resolveMedia(a.path,this::fullVideo);
         else if(a.kind.equals("voice")||a.kind.equals("audio"))resolveMedia(a.path,uri->external(uri,a.path));
         else resolveMedia(a.path,uri->external(uri,a.path));
@@ -875,6 +881,8 @@ public class MainActivity extends Activity {
     }
     private void stopPlayback(){
         if(progressUpdater!=null){handler.removeCallbacks(progressUpdater);progressUpdater=null;}
+        if(playerStrip!=null)playerStrip.setVisibility(View.GONE);
+        inlineHolder=null;playingAttachment=null;
         if(player!=null){
             try{player.stop();}catch(Exception ignored){}
             try{player.release();}catch(Exception ignored){}
@@ -896,6 +904,7 @@ public class MainActivity extends Activity {
     }
     /** TextureView lets Android crop video to a true circle while the SeekBar remains outside it. */
     private void startInlineRound(String path,FrameLayout holder,ImageView poster,TextView overlay){
+        inlineHolder=holder;
         if(player!=null&&path.equals(playingPath)){
             try{
                 if(player.isPlaying()){player.pause();overlay.setVisibility(View.VISIBLE);}
@@ -1050,6 +1059,21 @@ public class MainActivity extends Activity {
           if(which==participantColors.length)edit.remove(colorKey(name));else edit.putInt(colorKey(name),participantColors[which]);edit.apply();showPage();
        }).show();
     }
+    private void toggleActivePlayback(){
+        if(player==null)return;
+        try{if(player.isPlaying()){player.pause();playerPause.setText("▶");}else{player.start();playerPause.setText("⏸");}}catch(Exception ignored){}
+    }
+    private void playAdjacent(boolean forward){
+        if(playingAttachment==null)return;
+        final MessageDb.Attachment current=playingAttachment;
+        worker.execute(()->{
+            MessageDb.Attachment found=db.adjacentMedia(current.kind,current.messageId,current.id,forward);
+            runOnUiThread(()->{if(found==null){toast("Других сообщений нет");return;}
+                if(found.kind.equals("round"))showFloatingRound(found);
+                else if(found.kind.equals("voice")||found.kind.equals("audio"))startAudio(found.path,playerPause,playerText);
+            });
+        });
+    }
     private void settingsMenu(){new AlertDialog.Builder(this).setTitle("Настройки").setItems(
        new String[]{"Моё имя (сообщения справа)","Цвета участников","Мои архивы"},(d,i)->{
           if(i==0)identityDialog();else if(i==1)participantSettings();else chatPicker();
@@ -1084,6 +1108,7 @@ public class MainActivity extends Activity {
        if(floatingPanel!=null){FrameLayout p=floatingPanel;floatingPanel=null;stopPlayback();root.removeView(p);}
     }
     private void showFloatingRound(MessageDb.Attachment a){
+       int resume=floatingStart;floatingStart=0;
        closeFloatingRound();
        FrameLayout panel=new FrameLayout(this);floatingPanel=panel;
        FrameLayout.LayoutParams pos=new FrameLayout.LayoutParams(px(157),px(160),Gravity.END|Gravity.BOTTOM);
@@ -1102,7 +1127,10 @@ public class MainActivity extends Activity {
          public boolean onTouch(View v,MotionEvent e){if(e.getActionMasked()==MotionEvent.ACTION_DOWN){x=e.getRawX();y=e.getRawY();startX=v.getTranslationX();startY=v.getTranslationY();return true;}
            if(e.getActionMasked()==MotionEvent.ACTION_MOVE){v.setTranslationX(startX+e.getRawX()-x);v.setTranslationY(startY+e.getRawY()-y);return true;}return false;}
        });
-       startInlineRound(a.path,round,preview,play);
+       playingAttachment=a;startInlineRound(a.path,round,preview,play);
+       playerStrip.setVisibility(View.VISIBLE);
+       playerText.setText("▶ "+(a.author==null?"Видео-сообщение":a.author));
+       handler.postDelayed(()->{try{if(player!=null&&resume>0)player.seekTo(resume);}catch(Exception ignored){}},650);
     }
 
     @Override protected void onPause(){super.onPause();stopPlayback();}
