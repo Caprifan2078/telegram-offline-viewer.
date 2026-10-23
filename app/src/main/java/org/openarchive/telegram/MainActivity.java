@@ -158,7 +158,7 @@ public class MainActivity extends Activity {
         sideMenuItem(pane,"⇩  Восстановить архив","Импорт резервной копии приложения",()->{dialog.dismiss();restorePicker();});
         sideMenuItem(pane,"⚙  Настройки","Имя, цвета участников и другое",()->{dialog.dismiss();settingsMenu();});
         View gap=new View(this);pane.addView(gap,new LinearLayout.LayoutParams(1,0,1));
-        TextView label=text("Telegram Archive  ·  v"+BuildConfig.VERSION_NAME+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
+        TextView label=text("Telegram Archive  ·  v"+"0.17-beta"+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
         label.setPadding(px(4),px(16),0,px(12));pane.addView(label);
         overlay.setOnClickListener(v->dialog.dismiss());pane.setOnClickListener(v->{});
         dialog.setContentView(overlay);dialog.show();Window w=dialog.getWindow();if(w!=null)w.setLayout(-1,-1);
@@ -173,21 +173,48 @@ public class MainActivity extends Activity {
         item.setOnClickListener(v->action.run());
     }
     private void renderHome(){
-        ++loadToken;list.removeAllViews();pinnedBar.removeAllViews();filterBar.removeAllViews();searchArea.removeAllViews();verticalTimeline.setVisibility(View.GONE);bottomPager.setVisibility(View.GONE);bottomNav.setVisibility(View.GONE);
-        menuButton.setVisibility(View.VISIBLE);navBack.setVisibility(View.GONE);title.setText("Мои переписки");subtitle.setText("Сохранённые локальные архивы");status.setText("Все данные остаются на устройстве");
-        TextView saved=text("★ Избранное и заметки",18,FG);saved.setPadding(px(14),px(18),px(8),px(18));saved.setBackground(shape(0xff304a64,17));
-        list.addView(saved,p(-1,-2));saved.setOnClickListener(v->{home=false;screen="saved";renderSaved();});
+        ++loadToken;list.removeAllViews();pinnedBar.removeAllViews();filterBar.removeAllViews();searchArea.removeAllViews();
+        verticalTimeline.setVisibility(View.GONE);bottomPager.setVisibility(View.GONE);bottomNav.setVisibility(View.GONE);
+        menuButton.setVisibility(View.VISIBLE);navBack.setVisibility(View.GONE);
+        title.setText("Мои переписки");subtitle.setText("Твои сообщения · в одном месте");
+        status.setText("Личный архив  ·  Данные на устройстве");
+        LinearLayout hero=column();hero.setPadding(px(18),px(19),px(17),px(19));
+        hero.setBackground(gradient(0xff244b68,0xff163750,22));
+        LinearLayout.LayoutParams heroParams=p(-1,-2);heroParams.setMargins(px(2),px(10),px(2),px(14));list.addView(hero,heroParams);
+        TextView heading=text("Все важные разговоры",20,FG);heading.setTypeface(null,Typeface.BOLD);hero.addView(heading);
+        TextView description=text(archives.length()+" архивов  ·  офлайн и конфиденциально",13,0xffc8e2f1);
+        description.setPadding(0,px(9),0,0);hero.addView(description);
+        LinearLayout savedRow=row();savedRow.setPadding(px(15),px(12),px(14),px(12));
+        savedRow.setBackground(new RippleDrawable(ColorStateList.valueOf(0x445fc6ee),gradient(0xff345878,0xff264566,17),null));
+        LinearLayout.LayoutParams sp=p(-1,76);sp.setMargins(px(2),0,px(2),px(13));list.addView(savedRow,sp);
+        TextView star=text("★",30,0xffffd77b);star.setGravity(Gravity.CENTER);savedRow.addView(star,p(52,52));
+        LinearLayout savedDetails=column();savedDetails.setPadding(px(10),0,0,0);savedRow.addView(savedDetails,new LinearLayout.LayoutParams(0,-2,1));
+        TextView savedTitle=text("Избранное",17,FG);savedTitle.setTypeface(null,Typeface.BOLD);savedDetails.addView(savedTitle);
+        savedDetails.addView(text("Заметки и сохранённые сообщения",12,SUB));
+        savedRow.addView(text("›",27,SUB));savedRow.setOnClickListener(v->{home=false;screen="saved";renderSaved();});
+        TextView section=text("ПЕРЕПИСКИ",11,SUB);section.setTypeface(null,Typeface.BOLD);
+        section.setPadding(px(9),px(5),0,px(8));list.addView(section);
         for(int i=0;i<archives.length();i++){
-            JSONObject a=archives.optJSONObject(i);if(a==null)continue;
-            String key=a.optString("key"),name=a.optString("name","Переписка");
-            LinearLayout item=row();item.setPadding(px(14),px(12),px(14),px(12));item.setBackground(shape(PANEL,17));
-            LinearLayout.LayoutParams margins=p(-1,72);margins.setMargins(0,px(6),0,px(6));list.addView(item,margins);
-            TextView avatar=text(name.isEmpty()?"?":name.substring(0,1).toUpperCase(Locale.ROOT),21,FG);
-            avatar.setGravity(Gravity.CENTER);avatar.setBackground(shape(participantColors[i%participantColors.length],100));item.addView(avatar,p(48,48));
-            TextView label=text(name,17,FG);label.setPadding(px(14),0,0,0);item.addView(label,new LinearLayout.LayoutParams(0,-2,1));
-            item.setOnClickListener(v->activateArchive(key));
+            JSONObject chat=archives.optJSONObject(i);if(chat==null)continue;
+            String key=chat.optString("key"),name=chat.optString("name","Переписка");
+            LinearLayout item=row();item.setPadding(px(14),px(12),px(12),px(12));
+            item.setBackground(new RippleDrawable(ColorStateList.valueOf(0x436fc6f4),shape(PANEL,18),null));
+            LinearLayout.LayoutParams margins=p(-1,76);margins.setMargins(px(2),px(3),px(2),px(7));list.addView(item,margins);
+            String letter=name.isEmpty()?"?":name.substring(0,1).toUpperCase(Locale.ROOT);
+            TextView avatar=text(letter,23,FG);avatar.setTypeface(null,Typeface.BOLD);avatar.setGravity(Gravity.CENTER);
+            avatar.setBackground(gradient(participantColors[i%participantColors.length],0xff294968,100));item.addView(avatar,p(51,51));
+            LinearLayout info=column();info.setPadding(px(14),0,0,0);item.addView(info,new LinearLayout.LayoutParams(0,-2,1));
+            TextView nameLabel=text(name,16,FG);nameLabel.setTypeface(null,Typeface.BOLD);nameLabel.setSingleLine(true);
+            nameLabel.setEllipsize(TextUtils.TruncateAt.END);info.addView(nameLabel);
+            info.addView(text("Локальный архив · нажми для просмотра",11,SUB));
+            TextView arrow=text("›",25,ACCENT);item.addView(arrow);
+            item.setOnClickListener(v->{item.animate().alpha(.75f).setDuration(90).withEndAction(()->{item.setAlpha(1);activateArchive(key);}).start();});
         }
-        TextView add=text("＋ Добавить переписку",16,ACCENT);add.setPadding(px(14),px(20),px(14),px(20));list.addView(add,p(-1,-2));add.setOnClickListener(v->chooseFolder());
+        TextView add=text("＋   Добавить переписку",15,ACCENT);add.setTypeface(null,Typeface.BOLD);
+        add.setGravity(Gravity.CENTER);add.setPadding(px(12),px(17),px(12),px(17));
+        add.setBackground(new RippleDrawable(ColorStateList.valueOf(0x436fc6f4),shape(0xff1d364e,15),null));
+        LinearLayout.LayoutParams ap=p(-1,60);ap.setMargins(px(2),px(9),px(2),px(8));list.addView(add,ap);
+        add.setOnClickListener(v->chooseFolder());
         scroll.post(()->scroll.scrollTo(0,0));
     }
     private void renderSaved(){
