@@ -238,7 +238,7 @@ public class MainActivity extends Activity {
         sideMenuItem(menuItems,"▧  Фон переписки","Узоры и прозрачность",()->{dialog.dismiss();wallpaperDialog();});
         sideMenuItem(menuItems,"⚙  Настройки","Имя, цвета участников и другое",()->{dialog.dismiss();settingsMenu();});
 
-        TextView label=text("Telegram Archive  ·  v"+"0.23-beta"+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
+        TextView label=text("Telegram Archive  ·  v"+"0.24-beta"+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
         label.setPadding(px(4),px(16),0,px(12));pane.addView(label);
         overlay.setOnClickListener(v->dialog.dismiss());pane.setOnClickListener(v->{});
         dialog.setContentView(overlay);dialog.show();Window w=dialog.getWindow();if(w!=null)w.setLayout(-1,-1);
@@ -1264,7 +1264,9 @@ public class MainActivity extends Activity {
         });
     }
     private void loadThumbnail(String path,String kind,ImageView image){
-        Bitmap cached=thumbs.get(path);if(cached!=null&&!cached.isRecycled()){image.setImageBitmap(cached);return;}
+        String cacheKey=activeKey+"|"+path;
+        image.setTag(cacheKey);
+        Bitmap cached=thumbs.get(cacheKey);if(cached!=null&&!cached.isRecycled()){image.setImageBitmap(cached);return;}
         if(folder==null)return;DocumentFolder current=folder;int token=loadToken;
         mediaWorker.execute(()->{
             Bitmap bitmap=null;
@@ -1288,7 +1290,7 @@ public class MainActivity extends Activity {
                 if(small!=bitmap)bitmap.recycle();bitmap=small;
             }
             Bitmap result=bitmap;
-            runOnUiThread(()->{if(!isFinishing()&&token==loadToken){thumbs.put(path,result);image.setImageBitmap(result);}else result.recycle();});
+            runOnUiThread(()->{if(!isFinishing()&&token==loadToken){thumbs.put(cacheKey,result);if(cacheKey.equals(image.getTag()))image.setImageBitmap(result);}else result.recycle();});
         });
     }
 
