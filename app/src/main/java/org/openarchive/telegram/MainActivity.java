@@ -169,11 +169,11 @@ public class MainActivity extends Activity {
     private void renderPinnedBar(){
         pinnedBar.removeAllViews();
         if(!screen.equals("chat"))return;
-        final String key=activeKey;final int token=loadToken;
+        final String key=activeKey;
         worker.execute(()->{
             List<MessageDb.Item> pins=db.pinned();
             runOnUiThread(()->{
-                if(!screen.equals("chat")||!key.equals(activeKey)||token!=loadToken)return;
+                if(!screen.equals("chat")||!key.equals(activeKey))return;
                 pinnedBar.removeAllViews();if(pins.isEmpty()){pinnedFocus=-1;return;}
                 int selected=0;
                 for(int i=0;i<pins.size();i++)if(pins.get(i).id==pinnedFocus){selected=i;break;}
@@ -223,7 +223,11 @@ public class MainActivity extends Activity {
                 for(int i=0;i<pins.size();i++)
                     labels[i]=(i+1)+". "+day(pins.get(i).date)+" · "+clip(pins.get(i).body==null||pins.get(i).body.isEmpty()?"Медиа":pins.get(i).body,65);
                 new AlertDialog.Builder(this).setTitle("Закреплённые сообщения")
-                    .setItems(labels,(d,i)->pinnedItemMenu(pins.get(i))).show();
+                    .setItems(labels,(d,i)->{pinnedFocus=pins.get(i).id;jump(pinnedFocus,"");})
+                    .setNeutralButton("Открепить…",(d,i)->{
+                        new AlertDialog.Builder(this).setTitle("Что открепить?")
+                            .setItems(labels,(dialog,at)->unpinMessage(pins.get(at).id)).show();
+                    }).show();
             });
         });
     }
@@ -697,9 +701,10 @@ public class MainActivity extends Activity {
             player=null;
         }
         if(activeTexture!=null){
-            ViewGroup parent=activeTexture.getParent() instanceof ViewGroup?(ViewGroup)activeTexture.getParent():null;
-            if(parent!=null)parent.removeView(activeTexture);
+            TextureView previous=activeTexture;
             activeTexture=null;
+            ViewGroup parent=previous.getParent() instanceof ViewGroup?(ViewGroup)previous.getParent():null;
+            if(parent!=null)parent.removeView(previous);
         }
         if(activeRound!=null){
             activeRound.preview.setVisibility(View.VISIBLE);
