@@ -10,6 +10,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
 import java.util.Locale;
+import java.util.LinkedHashMap;
+import java.text.Normalizer;
 
 /** Private offline index: messages + media references; never stores copies of media bytes. */
 class MessageDb extends SQLiteOpenHelper {
@@ -60,7 +62,20 @@ class MessageDb extends SQLiteOpenHelper {
     boolean togglePinned(long id){SQLiteDatabase d=getWritableDatabase();if(isPinned(id)){d.delete("pins","message_id=?",new String[]{String.valueOf(id)});return false;}ContentValues v=new ContentValues();v.put("message_id",id);d.insertWithOnConflict("pins",null,v,SQLiteDatabase.CONFLICT_IGNORE);return true;}
     List<Item> pinned(){ArrayList<Item> result=new ArrayList<>();try(Cursor c=getReadableDatabase().rawQuery("SELECT m.id,m.author,m.date_text,m.body FROM messages m JOIN pins p ON p.message_id=m.id ORDER BY m.id DESC LIMIT 100",null)){while(c.moveToNext()){Item i=new Item();i.id=c.getLong(0);i.author=c.getString(1);i.date=c.getString(2);i.body=c.getString(3);result.add(i);}}return result;}
     int totalMessages(){try(Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM messages",null)){return c.moveToFirst()?c.getInt(0):0;}}
-    List<String> participants(){ArrayList<String> names=new ArrayList<>();try(Cursor c=getReadableDatabase().rawQuery("SELECT DISTINCT author FROM messages WHERE author IS NOT NULL AND trim(author)<>'' ORDER BY author LIMIT 100",null)){while(c.moveToNext())names.add(c.getString(0));}return names;}
+    static String normalizedAuthor(String author){
+        if(author==null)return "";
+        return Normalizer.normalize(author,Normalizer.Form.NFKC).replace('\u00a0',' ').trim().replaceAll("\\s+"," ").toLowerCase(Locale.ROOT);
+    }
+    List<String> participants(){
+        LinkedHashMap<String,String> unique=new LinkedHashMap<>();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT DISTINCT author FROM messages WHERE author IS NOT NULL AND trim(author)<>'' ORDER BY author",null)){
+            while(c.moveToNext()){
+                String display=c.getString(0).trim();String key=normalizedAuthor(display);
+                if(!key.isEmpty()&&!unique.containsKey(key))unique.put(key,display);
+            }
+        }
+        return new ArrayList<>(unique.values());
+    }
     private static String fold(String s){return (s==null?"":s).toLowerCase(Locale.ROOT);}
     void clearStage(SQLiteDatabase d){d.delete("staged_attachments",null,null);d.delete("staged_messages",null,null);}
     long stage(SQLiteDatabase d,String author,String date,String body,String media,String type){
@@ -223,6 +238,18 @@ class MessageDb extends SQLiteOpenHelper {
             }
         }
         return out;
+    }
+    Attachment adjacentMedia(String kind,long messageId,long attachmentId,boolean forward){
+        String op=forward?">":"<";String order=forward?"ASC":"DESC";
+        String sql="SELECT a.id,a.message_id,a.path,a.kind,m.author,m.date_text,m.body "+
+            "FROM attachments a JOIN messages m ON m.id=a.message_id WHERE a.kind=? AND "+
+            "(a.message_id "+op+" ? OR (a.message_id=? AND a.id "+op+" ?)) "+
+            "ORDER BY a.message_id "+order+",a.id "+order+" LIMIT 1";
+        try(Cursor c=getReadableDatabase().rawQuery(sql,new String[]{kind,String.valueOf(messageId),String.valueOf(messageId),String.valueOf(attachmentId)})){
+            if(!c.moveToFirst())return null;
+            Attachment a=new Attachment();a.id=c.getLong(0);a.messageId=c.getLong(1);a.path=c.getString(2);
+            a.kind=c.getString(3);a.author=c.getString(4);a.date=c.getString(5);a.body=c.getString(6);return a;
+        }
     }
     List<Attachment> attachmentsForMessage(long id){
         List<Attachment> list=new ArrayList<>();
