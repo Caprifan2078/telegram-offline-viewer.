@@ -191,7 +191,7 @@ public class MainActivity extends Activity {
         loadingMore=true;final int token=loadToken,offset=chatOffset+autoLoaded;
         worker.execute(()->{
             List<MessageDb.Item> part=db.page(offset,PAGE,"",false,"",false,false);
-            Map<Long,List<MessageDb.Attachment>> files=new HashMap<>();for(MessageDb.Item m:part)files.put(m.id,db.attachmentsForMessage(m.id));
+            Map<Long,List<MessageDb.Attachment>> files=db.attachmentsForMessages(part);
             runOnUiThread(()->{
                 loadingMore=false;if(token!=loadToken||!screen.equals("chat")||home)return;
                 if(part.isEmpty())return;
@@ -513,8 +513,8 @@ public class MainActivity extends Activity {
                 int pos=count==0?0:Math.min(requested,Math.max(0,count-1));
                 List<MessageDb.Attachment> attachments=gallery?db.mediaPage(kind,pos,MEDIA_PAGE):null;
                 List<MessageDb.Item> messages=gallery?null:db.page(pos,tab.equals("chat")?Math.max(PAGE,autoLoaded):PAGE,find?search:"",find&&deepMode,find&&deepMode?who:"",find&&deepMode&&hasMedia,favs);
-                Map<Long,List<MessageDb.Attachment>> links=new HashMap<>();
-                if(messages!=null)for(MessageDb.Item m:messages)links.put(m.id,db.attachmentsForMessage(m.id));
+                Map<Long,List<MessageDb.Attachment>> links=messages==null?new HashMap<>():db.attachmentsForMessages(messages);
+                MessageDb.SearchStats stats=find?db.searchStats(search,deepMode,deepMode?who:"",deepMode&&hasMedia):null;
                 runOnUiThread(()->{
                     if(isFinishing()||token!=loadToken)return;
                     total=count;setOffset(pos);list.removeAllViews();
@@ -528,7 +528,7 @@ public class MainActivity extends Activity {
                     if(count==0)status.setText(gallery?"Таких медиа пока нет. Попробуй повторный импорт исходных HTML.":
                             "Ничего не найдено — попробуй другой запрос или выбери папку.");
                     else status.setText("media".equals(tab)?"Нажми — воспроизвести · удерживай — действия":
-                            "search".equals(tab)?"Найдено "+count+" · нажми «К сообщению»":
+                            "search".equals(tab)?(search.isEmpty()?"Введите слово или фразу":("Сообщений: "+count+"  ·  Точных вхождений «"+clip(search,28)+"»: "+stats.literalOccurrences+(deepMode?"":"  ·  Быстрый поиск учитывает начала слов"))):
                             "favorites".equals(tab)?"Твои избранные сообщения": "История · удерживай сообщение для действий");
                 });
             }catch(Exception e){runOnUiThread(()->{if(token==loadToken)status.setText("Не удалось прочитать базу: "+e.getMessage());});}
