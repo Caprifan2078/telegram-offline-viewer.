@@ -1,7 +1,7 @@
-name: Build Telegram Archive v0.23 APK — archive and dock verification
+name: Build Telegram Archive v0.24 APK — archive and dock verification
 on:
   push:
-    branches: [main, feat/v023-emulator-bench-media-polish]
+    branches: [main, feat/v024-verified-media-backups-and-motion]
   workflow_dispatch:
 permissions:
   contents: read
@@ -51,7 +51,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Telegram-Archive-v0.23-TestResults
+          name: Telegram-Archive-v0.24-TestResults
           path: |
             app/build/outputs/androidTest-results/connected/
             app/build/reports/androidTests/connected/
@@ -59,6 +59,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Telegram-Archive-v0.23-APK
+          name: Telegram-Archive-v0.24-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
