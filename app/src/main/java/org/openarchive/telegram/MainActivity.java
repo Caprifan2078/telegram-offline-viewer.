@@ -289,7 +289,7 @@ public class MainActivity extends Activity {
             List<MessageDb.Item> pins=db.pinned();
             runOnUiThread(()->{
                 if(!screen.equals("chat")||home||!key.equals(activeKey))return;
-                pinnedBar.removeAllViews();if(pins.isEmpty()){pinnedFocus=-1;return;}
+                pinnedBar.animate().cancel();pinnedBar.setAlpha(1f);pinnedBar.removeAllViews();if(pins.isEmpty()){pinnedFocus=-1;return;}
                 int selected=0;
                 for(int i=0;i<pins.size();i++)if(pins.get(i).id==pinnedFocus){selected=i;break;}
                 MessageDb.Item current=pins.get(selected);pinnedFocus=current.id;
@@ -314,6 +314,7 @@ public class MainActivity extends Activity {
                 TextView unpin=text("✕",20,SUB);unpin.setGravity(Gravity.CENTER);bar.addView(unpin,p(32,45));
                 unpin.setOnClickListener(v->unpinMessage(current.id));
                 bar.setOnLongClickListener(v->{showPinList();return true;});
+                bar.setAlpha(0f);bar.setTranslationY(-px(8));bar.animate().alpha(1f).translationY(0).setDuration(260).setInterpolator(new DecelerateInterpolator()).start();
             });
         });
     }
