@@ -191,7 +191,7 @@ public class MainActivity extends Activity {
                 if(part.isEmpty())return;
                 autoLoaded+=part.size();
                 // Render only the additional part, leaving previous messages and scroll position intact.
-                renderMessages(part,files,false);
+                int lastY=scroll.getScrollY();renderMessages(part,files,false);scroll.post(()->scroll.scrollTo(0,lastY));
                 pageLabel.setText((chatOffset+1)+"–"+Math.min(total,chatOffset+autoLoaded)+" / "+total);
             });
         });
