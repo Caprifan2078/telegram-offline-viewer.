@@ -1,4 +1,4 @@
-name: Build Telegram Archive v0.16 APK
+name: Build Telegram Archive v0.16 APK — archive and dock verification
 on:
   push:
     branches: [main, feat/v016-archive-import-zoom-dock]
