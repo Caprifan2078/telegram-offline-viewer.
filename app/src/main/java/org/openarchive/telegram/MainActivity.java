@@ -79,8 +79,9 @@ import java.util.concurrent.Executors;
 /** Offline Telegram-style archive. No INTERNET permission, no uploads or telemetry. */
 public class MainActivity extends Activity {
     private static final int PICK_FOLDER=27,PAGE=40,MEDIA_PAGE=30;
-    private static final int BG=0xff0b1424,PANEL=0xff18283e,INCOMING=0xff29405b,OUTGOING=0xff1a6159,
+    private int BG=0xff0b1424,PANEL=0xff18283e,INCOMING=0xff29405b,OUTGOING=0xff1a6159,
             FG=0xfff5f9ff,SUB=0xffafc1d4,ACCENT=0xff7ad2ff,CHIP=0xff29465f,HIGHLIGHT=0xff326e8f;
+    private int themeIndex=0, densityIndex=1;private boolean reduceMotion=false;
     private static final String[] MEDIA_KEYS={"all","round","voice","image","video","audio","file","gif","sticker"};
     private static final String[] MEDIA_LABELS={"Всё","Видеосообщения","Голосовые","Фото","Видео","Музыка","Файлы","GIF","Стикеры"};
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
@@ -118,6 +119,8 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
+        loadAppearance();
+        if(state!=null){home=state.getBoolean("ta_home",true);screen=state.getString("ta_screen","chat");}
         loadArchiveRegistry();
         savedStore=new SavedStore(this);
         db=new MessageDb(this,activeKey);
@@ -125,6 +128,53 @@ public class MainActivity extends Activity {
         String old=activeTree();
         if(old!=null)try{folder=old.startsWith("local:")?new DocumentFolder(getContentResolver(),new java.io.File(old.substring(6))):new DocumentFolder(getContentResolver(),Uri.parse(old));}catch(Exception ignored){}
         createUi();showPage();
+    }
+    @Override protected void onSaveInstanceState(Bundle state){
+        state.putBoolean("ta_home",home);state.putString("ta_screen",screen);
+        super.onSaveInstanceState(state);
+    }
+    private void loadAppearance(){
+        SharedPreferences prefs=getPreferences(MODE_PRIVATE);
+        themeIndex=prefs.getInt("appearance_theme",0);
+        densityIndex=prefs.getInt("appearance_density",1);
+        reduceMotion=prefs.getBoolean("appearance_less_motion",false);
+        if(themeIndex==1){ // Dark graphite
+            BG=0xff101216;PANEL=0xff23262d;INCOMING=0xff30343d;OUTGOING=0xff33544e;
+            FG=0xfff5f5f7;SUB=0xffb8bdc7;ACCENT=0xffb5b9ff;CHIP=0xff393e4b;HIGHLIGHT=0xff474b80;
+        }else if(themeIndex==2){ // Light pearl
+            BG=0xfff3f6fa;PANEL=0xffffffff;INCOMING=0xffe2e9f2;OUTGOING=0xffc5eade;
+            FG=0xff172b43;SUB=0xff506780;ACCENT=0xff1468a4;CHIP=0xffdce8f4;HIGHLIGHT=0xffb3d9ed;
+        }else{
+            BG=0xff0b1424;PANEL=0xff18283e;INCOMING=0xff29405b;OUTGOING=0xff1a6159;
+            FG=0xfff5f9ff;SUB=0xffafc1d4;ACCENT=0xff7ad2ff;CHIP=0xff29465f;HIGHLIGHT=0xff326e8f;
+        }
+        getWindow().setStatusBarColor(BG);
+        getWindow().setNavigationBarColor(BG);
+        int flags=themeIndex==2?View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR:0;
+        getWindow().getDecorView().setSystemUiVisibility(flags);
+    }
+    private int motionDuration(int normal){return reduceMotion?0:normal;}
+    private int bubbleInset(){return densityIndex==0?5:densityIndex==2?14:9;}
+    private void appearanceDialog(){
+        String[] themes={"Океан · тёмно-синяя","Графит · строгая тёмная","Жемчуг · светлая"};
+        new AlertDialog.Builder(this).setTitle("Тема оформления")
+            .setSingleChoiceItems(themes,themeIndex,(dialog,index)->{
+                getPreferences(MODE_PRIVATE).edit().putInt("appearance_theme",index).apply();
+                dialog.dismiss();loadAppearance();recreate();
+            })
+            .setNeutralButton("Плотность сообщений",(dialog,button)->densityDialog())
+            .setPositiveButton("Готово",null).show();
+    }
+    private void densityDialog(){
+        String[] options={"Компактно","Обычно","Просторно"};
+        new AlertDialog.Builder(this).setTitle("Плотность переписки")
+            .setSingleChoiceItems(options,densityIndex,(dialog,index)->{
+                getPreferences(MODE_PRIVATE).edit().putInt("appearance_density",index).apply();
+                dialog.dismiss();recreate();
+            }).setNeutralButton(reduceMotion?"Включить анимации":"Уменьшить анимации",(dialog,index)->{
+                getPreferences(MODE_PRIVATE).edit().putBoolean("appearance_less_motion",!reduceMotion).apply();
+                recreate();
+            }).setPositiveButton("Готово",null).show();
     }
     private int px(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
     private GradientDrawable shape(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(px(radius));return d;}
@@ -138,7 +188,7 @@ public class MainActivity extends Activity {
         b.setTypeface(Typeface.DEFAULT,Typeface.BOLD);b.setTextColor(FG);
         b.setPadding(px(9),0,px(9),0);b.setMinWidth(0);b.setMinHeight(0);
         b.setElevation(0);b.setStateListAnimator(null);
-        b.setBackground(new RippleDrawable(ColorStateList.valueOf(0x447ad2ff),shape(PANEL,14),null));
+        b.setBackground(new RippleDrawable(ColorStateList.valueOf(themeIndex==2?0x332b659a:0x447ad2ff),shape(PANEL,14),null));
         return b;
     }
     private void space(ViewGroup g,int height){g.addView(new View(this),new ViewGroup.LayoutParams(1,px(height)));}
@@ -148,7 +198,7 @@ public class MainActivity extends Activity {
         final Dialog dialog=new Dialog(this,android.R.style.Theme_Translucent_NoTitleBar);
         FrameLayout overlay=new FrameLayout(this);overlay.setBackgroundColor(0x99040912);
         LinearLayout pane=column();pane.setPadding(px(20),px(28),px(18),px(18));
-        pane.setBackground(gradient(0xff213751,0xff101e30,22));pane.setElevation(px(14));
+        pane.setBackground(gradient(themeIndex==2?0xffffffff:0xff213751,themeIndex==2?0xffe4ebf4:0xff101e30,22));pane.setElevation(px(14));
         FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(Math.min(px(316),getResources().getDisplayMetrics().widthPixels-px(42)),-1,Gravity.START);
         overlay.addView(pane,lp);
         TextView app=text("◉   TELEGRAM ARCHIVE",17,FG);app.setTypeface(null,Typeface.BOLD);app.setPadding(px(4),px(9),0,px(4));pane.addView(app);
@@ -160,17 +210,18 @@ public class MainActivity extends Activity {
         sideMenuItem(pane,"◈  Пробное восстановление","Тест баз и медиа без изменения чатов",()->{dialog.dismiss();dryRunPicker();});
         sideMenuItem(pane,"✓  Проверить резервную копию","Проверка целостности без восстановления",()->{dialog.dismiss();verifyBackupPicker();});
         sideMenuItem(pane,"⇩  Восстановить архив","Импорт резервной копии приложения",()->{dialog.dismiss();restorePicker();});
+        sideMenuItem(pane,"◐  Внешний вид","Океан, графит, светлая · плотность",()->{dialog.dismiss();appearanceDialog();});
         sideMenuItem(pane,"⚙  Настройки","Имя, цвета участников и другое",()->{dialog.dismiss();settingsMenu();});
         View gap=new View(this);pane.addView(gap,new LinearLayout.LayoutParams(1,0,1));
-        TextView label=text("Telegram Archive  ·  v"+"0.20-beta"+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
+        TextView label=text("Telegram Archive  ·  v"+"0.21-beta"+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
         label.setPadding(px(4),px(16),0,px(12));pane.addView(label);
         overlay.setOnClickListener(v->dialog.dismiss());pane.setOnClickListener(v->{});
         dialog.setContentView(overlay);dialog.show();Window w=dialog.getWindow();if(w!=null)w.setLayout(-1,-1);
-        pane.setTranslationX(-px(340));pane.animate().translationX(0).setDuration(260).setInterpolator(new DecelerateInterpolator()).start();
+        pane.setTranslationX(-px(340));pane.animate().translationX(0).setDuration(motionDuration(260)).setInterpolator(new DecelerateInterpolator()).start();
     }
     private void sideMenuItem(LinearLayout pane,String heading,String detail,Runnable action){
         LinearLayout item=column();item.setPadding(px(13),px(12),px(9),px(12));
-        item.setBackground(new RippleDrawable(ColorStateList.valueOf(0x445aaad8),shape(0xff29435f,15),null));
+        item.setBackground(new RippleDrawable(ColorStateList.valueOf(0x445aaad8),shape(CHIP,15),null));
         LinearLayout.LayoutParams params=p(-1,-2);params.bottomMargin=px(8);pane.addView(item,params);
         TextView name=text(heading,15,FG);name.setTypeface(null,Typeface.BOLD);item.addView(name);
         TextView summary=text(detail,11,SUB);summary.setPadding(0,px(4),0,0);item.addView(summary);
@@ -179,7 +230,7 @@ public class MainActivity extends Activity {
     private void animateEntrance(){
         if(list==null)return;
         list.animate().cancel();list.setAlpha(0.4f);list.setTranslationY(px(13));
-        list.animate().alpha(1f).translationY(0).setDuration(270).setInterpolator(new DecelerateInterpolator()).start();
+        list.animate().alpha(1f).translationY(0).setDuration(motionDuration(270)).setInterpolator(new DecelerateInterpolator()).start();
     }
     private void renderHome(){
         ++loadToken;list.removeAllViews();pinnedBar.removeAllViews();filterBar.removeAllViews();searchArea.removeAllViews();
@@ -188,13 +239,13 @@ public class MainActivity extends Activity {
         title.setText("Мои переписки");subtitle.setText("Твои сообщения · в одном месте");
         status.setText("Личный архив  ·  Данные на устройстве");
         LinearLayout hero=column();hero.setPadding(px(18),px(19),px(17),px(19));
-        hero.setBackground(gradient(0xff244b68,0xff163750,22));
+        hero.setBackground(gradient(themeIndex==2?0xffd5e8f7:0xff244b68,themeIndex==2?0xffe9f2fa:0xff163750,22));
         LinearLayout.LayoutParams heroParams=p(-1,-2);heroParams.setMargins(px(2),px(10),px(2),px(14));list.addView(hero,heroParams);
         TextView heading=text("Все важные разговоры",20,FG);heading.setTypeface(null,Typeface.BOLD);hero.addView(heading);
-        TextView description=text(archives.length()+" архивов  ·  офлайн и конфиденциально",13,0xffc8e2f1);
+        TextView description=text(archives.length()+" архивов  ·  офлайн и конфиденциально",13,themeIndex==2?SUB:0xffc8e2f1);
         description.setPadding(0,px(9),0,0);hero.addView(description);
         LinearLayout savedRow=row();savedRow.setPadding(px(15),px(12),px(14),px(12));
-        savedRow.setBackground(new RippleDrawable(ColorStateList.valueOf(0x445fc6ee),gradient(0xff345878,0xff264566,17),null));
+        savedRow.setBackground(new RippleDrawable(ColorStateList.valueOf(0x445fc6ee),gradient(themeIndex==2?0xffe1e9f5:0xff345878,themeIndex==2?0xffeaf3fc:0xff264566,17),null));
         LinearLayout.LayoutParams sp=p(-1,76);sp.setMargins(px(2),0,px(2),px(13));list.addView(savedRow,sp);
         TextView star=text("★",30,0xffffd77b);star.setGravity(Gravity.CENTER);savedRow.addView(star,p(52,52));
         LinearLayout savedDetails=column();savedDetails.setPadding(px(10),0,0,0);savedRow.addView(savedDetails,new LinearLayout.LayoutParams(0,-2,1));
@@ -221,7 +272,7 @@ public class MainActivity extends Activity {
         }
         TextView add=text("＋   Добавить переписку",15,ACCENT);add.setTypeface(null,Typeface.BOLD);
         add.setGravity(Gravity.CENTER);add.setPadding(px(12),px(17),px(12),px(17));
-        add.setBackground(new RippleDrawable(ColorStateList.valueOf(0x436fc6f4),shape(0xff1d364e,15),null));
+        add.setBackground(new RippleDrawable(ColorStateList.valueOf(0x436fc6f4),shape(CHIP,15),null));
         LinearLayout.LayoutParams ap=p(-1,60);ap.setMargins(px(2),px(9),px(2),px(8));list.addView(add,ap);
         add.setOnClickListener(v->chooseFolder());
         animateEntrance();scroll.post(()->scroll.scrollTo(0,0));
@@ -749,14 +800,14 @@ public class MainActivity extends Activity {
             String date=day(m.date);if(!date.equals(last)){dateSeparator(date);last=date;}
             boolean own=!mine.isEmpty()&&mine.equalsIgnoreCase(m.author==null?"":m.author.trim());
             LinearLayout line=row();line.setGravity(own?Gravity.RIGHT:Gravity.LEFT);
-            LinearLayout.LayoutParams linep=p(-1,-2);linep.setMargins(px(2),px(1),px(2),px(4));list.addView(line,linep);
+            LinearLayout.LayoutParams linep=p(-1,-2);linep.setMargins(px(2),px(1),px(2),px(densityIndex==0?2:densityIndex==2?8:4));list.addView(line,linep);
             if(!own){TextView avatar=text(initial(m.author),14,FG);avatar.setTypeface(null,Typeface.BOLD);
                 avatar.setGravity(Gravity.CENTER);avatar.setBackground(shape(authorColor(m.author),100));
                 LinearLayout.LayoutParams ap=p(32,32);ap.rightMargin=px(7);line.addView(avatar,ap);}
-            LinearLayout bubble=column();bubble.setPadding(px(9),px(6),px(9),px(7));
+            LinearLayout bubble=column();bubble.setPadding(px(bubbleInset()),px(densityIndex==0?3:densityIndex==2?10:6),px(bubbleInset()),px(densityIndex==0?3:densityIndex==2?11:7));
             int chosenColor=authorColor(m.author);
-            bubble.setBackground(gradient(m.id==highlightId?0xff477c91:chosenColor,
-                    m.id==highlightId?0xff33576b:darken(chosenColor),17));
+            bubble.setBackground(gradient(m.id==highlightId?HIGHLIGHT:chosenColor,
+                    m.id==highlightId?HIGHLIGHT:darken(chosenColor),17));
             if(m.id==highlightId){glowBubble=bubble;glowBase=chosenColor;glowId=m.id;line.setBackground(shape(0x443ad0fc,12));}
             LinearLayout.LayoutParams bp=p(-2,-2);line.addView(bubble,bp);
             int maxWidth=getResources().getDisplayMetrics().widthPixels-px(93);
@@ -1379,9 +1430,9 @@ public class MainActivity extends Activity {
         });
     }
     private void settingsMenu(){new AlertDialog.Builder(this).setTitle("Настройки").setItems(
-       new String[]{"Моё имя (сообщения справа)","Цвета участников","Объединить цвета нескольких имён","Мои архивы","Создать резервную копию","Восстановить резервную копию"},(d,i)->{
-          if(i==0)identityDialog();else if(i==1)participantSettings();else if(i==2)groupedParticipantColors();else if(i==3)chatPicker();
-          else if(i==4)backupPicker();else restorePicker();
+       new String[]{"Внешний вид и темы","Моё имя (сообщения справа)","Цвета участников","Объединить цвета нескольких имён","Мои архивы","Создать резервную копию","Восстановить резервную копию"},(d,i)->{
+          if(i==0)appearanceDialog();else if(i==1)identityDialog();else if(i==2)participantSettings();else if(i==3)groupedParticipantColors();else if(i==4)chatPicker();
+          else if(i==5)backupPicker();else restorePicker();
        }).show();}
     private String displayDocumentName(Uri uri){
         try(android.database.Cursor c=getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null)){
