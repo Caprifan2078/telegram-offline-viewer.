@@ -732,8 +732,14 @@ public class MainActivity extends Activity {
         status.setText("Перехожу к сообщению…");
         worker.execute(()->{
             int at=db.hasMessage(id)?db.positionFor(id):-1;
+            List<MessageDb.Item> candidates=db.pinned();
+            long nextPinned=-1;
+            for(MessageDb.Item candidate:candidates)if(candidate.id<id){nextPinned=candidate.id;break;}
+            if(nextPinned<0&&!candidates.isEmpty())nextPinned=candidates.get(0).id;
+            final long rotation=nextPinned;
             runOnUiThread(()->{
                 if(at<0){toast("Сообщение не найдено");return;}
+                if(rotation>=0)pinnedFocus=rotation;
                 home=false;autoLoaded=PAGE;
                 returnScreen=source;screen="chat";chatOffset=Math.max(0,at-7);highlightId=id;showPage();
             });
