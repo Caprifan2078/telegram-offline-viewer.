@@ -157,11 +157,12 @@ public class MainActivity extends Activity {
         sideMenuItem(pane,"★  Избранное","Заметки и сохранённые сообщения",()->{home=false;screen="saved";renderSaved();dialog.dismiss();});
         sideMenuItem(pane,"＋  Импортировать чат","Папка Telegram, ZIP или RAR",()->{dialog.dismiss();chooseFolder();});
         sideMenuItem(pane,"⇧  Экспортировать чаты","Резервная копия сообщений и настроек",()->{dialog.dismiss();backupPicker();});
+        sideMenuItem(pane,"◈  Пробное восстановление","Тест баз и медиа без изменения чатов",()->{dialog.dismiss();dryRunPicker();});
         sideMenuItem(pane,"✓  Проверить резервную копию","Проверка целостности без восстановления",()->{dialog.dismiss();verifyBackupPicker();});
         sideMenuItem(pane,"⇩  Восстановить архив","Импорт резервной копии приложения",()->{dialog.dismiss();restorePicker();});
         sideMenuItem(pane,"⚙  Настройки","Имя, цвета участников и другое",()->{dialog.dismiss();settingsMenu();});
         View gap=new View(this);pane.addView(gap,new LinearLayout.LayoutParams(1,0,1));
-        TextView label=text("Telegram Archive  ·  v"+"0.19-beta"+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
+        TextView label=text("Telegram Archive  ·  v"+"0.20-beta"+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
         label.setPadding(px(4),px(16),0,px(12));pane.addView(label);
         overlay.setOnClickListener(v->dialog.dismiss());pane.setOnClickListener(v->{});
         dialog.setContentView(overlay);dialog.show();Window w=dialog.getWindow();if(w!=null)w.setLayout(-1,-1);
@@ -174,6 +175,11 @@ public class MainActivity extends Activity {
         TextView name=text(heading,15,FG);name.setTypeface(null,Typeface.BOLD);item.addView(name);
         TextView summary=text(detail,11,SUB);summary.setPadding(0,px(4),0,0);item.addView(summary);
         item.setOnClickListener(v->action.run());
+    }
+    private void animateEntrance(){
+        if(list==null)return;
+        list.animate().cancel();list.setAlpha(0.4f);list.setTranslationY(px(13));
+        list.animate().alpha(1f).translationY(0).setDuration(270).setInterpolator(new DecelerateInterpolator()).start();
     }
     private void renderHome(){
         ++loadToken;list.removeAllViews();pinnedBar.removeAllViews();filterBar.removeAllViews();searchArea.removeAllViews();
@@ -218,7 +224,7 @@ public class MainActivity extends Activity {
         add.setBackground(new RippleDrawable(ColorStateList.valueOf(0x436fc6f4),shape(0xff1d364e,15),null));
         LinearLayout.LayoutParams ap=p(-1,60);ap.setMargins(px(2),px(9),px(2),px(8));list.addView(add,ap);
         add.setOnClickListener(v->chooseFolder());
-        scroll.post(()->scroll.scrollTo(0,0));
+        animateEntrance();scroll.post(()->scroll.scrollTo(0,0));
     }
     private void renderSaved(){
         ++loadToken;home=false;screen="saved";list.removeAllViews();filterBar.removeAllViews();searchArea.removeAllViews();pinnedBar.removeAllViews();bottomNav.setVisibility(View.GONE);bottomPager.setVisibility(View.GONE);verticalTimeline.setVisibility(View.GONE);
@@ -593,6 +599,7 @@ public class MainActivity extends Activity {
     @Override public void onBackPressed(){if(screen.equals("saved")||(!home&&returnScreen.isEmpty())){saveReadingProgress();home=true;screen="chat";bottomNav.setVisibility(View.VISIBLE);showPage();return;}if(!returnScreen.isEmpty()){restoreReturn();return;}super.onBackPressed();}
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
+        if(request==44&&result==RESULT_OK&&data!=null&&data.getData()!=null){dryRunSelected(data.getData());return;}
         if(request==43&&result==RESULT_OK&&data!=null&&data.getData()!=null){verifyBackup(data.getData());return;}
         if((request==41||request==42)&&result==RESULT_OK&&data!=null&&data.getData()!=null){
             if(request==42)askRestorePassword(data.getData());else{
@@ -691,6 +698,7 @@ public class MainActivity extends Activity {
                     if(isFinishing()||token!=loadToken)return;
                     total=count;setOffset(pos);list.removeAllViews();
                     if(gallery)renderMedia(attachments);else renderMessages(messages,links,find);
+                    animateEntrance();
                     bottomPager.setVisibility(tab.equals("chat")||tab.equals("search")?View.GONE:View.VISIBLE);
                     int shown=gallery?attachments.size():messages.size();
                     verticalTimeline.setVisibility("chat".equals(tab)?View.VISIBLE:View.GONE);
@@ -1407,6 +1415,37 @@ public class MainActivity extends Activity {
         i.setType("application/octet-stream");i.addCategory(Intent.CATEGORY_OPENABLE);
         i.putExtra(Intent.EXTRA_TITLE,"TelegramArchive-"+(fullBackupMode?"FULL":"COMPACT")+(backupPassword==null?".zip":".tgar"));
         startActivityForResult(i,41);
+    }
+    private void dryRunPicker(){
+        Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("*/*");
+        i.addCategory(Intent.CATEGORY_OPENABLE);i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivityForResult(i,44);
+    }
+    private void dryRunSelected(Uri uri){
+        try{
+            if(SecureArchive.isEncrypted(this,uri)){
+                EditText input=new EditText(this);input.setInputType(129);input.setHint("Пароль резервной копии");
+                new AlertDialog.Builder(this).setTitle("Пробное восстановление").setView(input)
+                    .setNegativeButton("Отмена",null)
+                    .setPositiveButton("Проверить",(d,w)->runDryRestore(uri,input.getText().toString().toCharArray())).show();
+            }else runDryRestore(uri,null);
+        }catch(Exception e){status.setText("Ошибка чтения: "+e.getMessage());}
+    }
+    private void runDryRestore(Uri uri,char[] pass){
+        if(importing||restoringBackup)return;
+        restoringBackup=true;status.setText("Проверяю временные базы, чаты не изменяются…");
+        worker.execute(()->{
+            try{
+                BackupVerifier.DryRun report=BackupVerifier.simulate(this,uri,pass,msg->runOnUiThread(()->status.setText(msg)));
+                runOnUiThread(()->{
+                    restoringBackup=false;
+                    new AlertDialog.Builder(this).setTitle("Пробное восстановление завершено")
+                        .setMessage(report.summary()+"\\n\\nПроверены базы SQLite и чтение архива. Исходные чаты не затронуты. Открытие медиа на другом устройстве требует отдельного теста.")
+                        .setPositiveButton("Отлично",null).show();
+                });
+            }catch(Exception e){runOnUiThread(()->{restoringBackup=false;status.setText("Ошибка пробного восстановления: "+e.getMessage());});}
+            finally{if(pass!=null)java.util.Arrays.fill(pass,(char)0);}
+        });
     }
     private void verifyBackupPicker(){
         Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);
