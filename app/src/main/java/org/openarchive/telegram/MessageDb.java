@@ -21,7 +21,7 @@ class MessageDb extends SQLiteOpenHelper {
     static final class Attachment {
         long id,messageId; String path,kind,author,date,body;
     }
-    MessageDb(Context ctx,String key){super(ctx,"default".equals(key)?"telegram_archive.db":"telegram_"+key+".db",null,6);}
+    MessageDb(Context ctx,String key){super(ctx,"default".equals(key)?"telegram_archive.db":"telegram_"+key+".db",null,7);}
     @Override public void onConfigure(SQLiteDatabase d){super.onConfigure(d);d.enableWriteAheadLogging();}
     @Override public void onCreate(SQLiteDatabase d){
         d.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY,author TEXT,date_text TEXT,body TEXT,media TEXT,media_type TEXT,body_fold TEXT,author_fold TEXT)");
@@ -49,6 +49,10 @@ class MessageDb extends SQLiteOpenHelper {
         }
         if(old<4){d.execSQL("CREATE TABLE IF NOT EXISTS favorites (message_id INTEGER PRIMARY KEY)");}
         if(old<6)d.execSQL("CREATE TABLE IF NOT EXISTS pins (message_id INTEGER PRIMARY KEY)");
+        if(old<7){
+            d.execSQL("UPDATE attachments SET kind='gif' WHERE kind='video' AND (lower(path) LIKE '%/animations/%' OR lower(path) LIKE '%/gifs/%' OR lower(path) LIKE '%/animated/%')");
+            d.execSQL("UPDATE attachments SET kind='gif' WHERE kind='image' AND lower(path) LIKE '%.gif'");
+        }
         if(old<5){
             d.execSQL("ALTER TABLE messages ADD COLUMN body_fold TEXT");
             d.execSQL("ALTER TABLE messages ADD COLUMN author_fold TEXT");
