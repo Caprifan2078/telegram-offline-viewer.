@@ -197,7 +197,9 @@ public class MainActivity extends Activity {
                 if(part.isEmpty())return;
                 autoLoaded+=part.size();
                 // Render only the additional part, leaving previous messages and scroll position intact.
-                int lastY=scroll.getScrollY();renderMessages(part,files,false);scroll.post(()->scroll.scrollTo(0,lastY));
+                int lastY=scroll.getScrollY();
+                renderMessages(part,files,false,true);
+                scroll.post(()->scroll.scrollTo(0,lastY));
                 pageLabel.setText((chatOffset+1)+"–"+Math.min(total,chatOffset+autoLoaded)+" / "+total);
             });
         });
@@ -557,8 +559,11 @@ public class MainActivity extends Activity {
         }return span;
     }
     private void renderMessages(List<MessageDb.Item> messages,Map<Long,List<MessageDb.Attachment>> files,boolean results){
+        renderMessages(messages,files,results,false);
+    }
+    private void renderMessages(List<MessageDb.Item> messages,Map<Long,List<MessageDb.Attachment>> files,boolean results,boolean append){
         if(messages.isEmpty())return;
-        String last="";View focus=null;
+        String last=append?lastRenderedDay:"";View focus=null;View glowBubble=null;int glowBase=0;long glowId=-1;
         for(MessageDb.Item m:messages){
             String date=day(m.date);if(!date.equals(last)){dateSeparator(date);last=date;}
             boolean own=!mine.isEmpty()&&mine.equalsIgnoreCase(m.author==null?"":m.author.trim());
@@ -571,6 +576,7 @@ public class MainActivity extends Activity {
             int chosenColor=authorColor(m.author);
             bubble.setBackground(gradient(m.id==highlightId?0xff477c91:chosenColor,
                     m.id==highlightId?0xff33576b:darken(chosenColor),17));
+            if(m.id==highlightId){glowBubble=bubble;glowBase=chosenColor;glowId=m.id;}
             LinearLayout.LayoutParams bp=p(-2,-2);line.addView(bubble,bp);
             int maxWidth=getResources().getDisplayMetrics().widthPixels-px(93);
             if(maxWidth<px(190))maxWidth=px(240);final int mw=maxWidth;
@@ -595,8 +601,41 @@ public class MainActivity extends Activity {
             }
             if(m.id==highlightId)focus=line;
         }
+        lastRenderedDay=last;
+        if(append)return; // Never jump to the top when more history is appended.
         final View target=focus;
-        scroll.post(()->scroll.scrollTo(0,target==null?0:Math.max(0,target.getTop()-px(95))));
+        final View targetBubble=glowBubble;
+        final int color=glowBase;
+        final long id=glowId;
+        scroll.post(()->{
+            if(target!=null){
+                scroll.smoothScrollTo(0,Math.max(0,target.getTop()-px(120)));
+                if(targetBubble!=null){
+                    targetBubble.postDelayed(()->pulseMessage(targetBubble,color,id),190);
+                }
+            }else scroll.scrollTo(0,0);
+        });
+    }
+    private int mixColors(int a,int b,float t){
+        return Color.rgb(
+            Math.round(Color.red(a)*(1-t)+Color.red(b)*t),
+            Math.round(Color.green(a)*(1-t)+Color.green(b)*t),
+            Math.round(Color.blue(a)*(1-t)+Color.blue(b)*t));
+    }
+    private void pulseMessage(View bubble,int background,long id){
+        if(highlightId!=id||!screen.equals("chat")||home)return;
+        android.graphics.drawable.Drawable drawable=bubble.getBackground();
+        if(!(drawable instanceof GradientDrawable))return;
+        GradientDrawable bg=(GradientDrawable)drawable;
+        ValueAnimator animator=ValueAnimator.ofFloat(0f,1f);
+        animator.setDuration(1750);animator.setInterpolator(new DecelerateInterpolator());
+        animator.addUpdateListener(animation->{
+            if(bubble.getParent()==null)return;
+            float t=(float)animation.getAnimatedValue();
+            bg.setColors(new int[]{mixColors(0xff78cae4,background,t),mixColors(0xff397c9d,darken(background),t)});
+        });
+        animator.start();
+        handler.postDelayed(()->{if(highlightId==id)highlightId=-1;},1850);
     }
     private String initial(String s){if(s==null||s.isEmpty())return "?";return s.substring(0,1).toUpperCase(Locale.ROOT);}
     private void messageActions(MessageDb.Item m){
