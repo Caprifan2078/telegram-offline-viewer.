@@ -1376,9 +1376,27 @@ public class MainActivity extends Activity {
        round.setOnLongClickListener(v->{mediaActions(a);return true;});
        TextView close=text("✕",20,FG);close.setBackground(shape(0xffa43b47,100));close.setGravity(Gravity.CENTER);
        panel.addView(close,new FrameLayout.LayoutParams(px(35),px(35),Gravity.TOP|Gravity.START));close.setOnClickListener(v->closeFloatingRound());
+       Button dock=btn("↔");
+       FrameLayout.LayoutParams dockPosition=new FrameLayout.LayoutParams(px(43),px(37),Gravity.TOP|Gravity.END);
+       panel.addView(dock,dockPosition);
+       final boolean[] minimized={false};
+       dock.setOnClickListener(v->{
+           minimized[0]=!minimized[0];
+           FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)panel.getLayoutParams();
+           lp.width=px(minimized[0]?68:157);lp.height=px(minimized[0]?75:160);
+           panel.setLayoutParams(lp);
+           FrameLayout.LayoutParams circleParams=(FrameLayout.LayoutParams)round.getLayoutParams();
+           circleParams.width=px(minimized[0]?60:140);circleParams.height=px(minimized[0]?60:140);
+           round.setLayoutParams(circleParams);
+           close.setVisibility(minimized[0]?View.GONE:View.VISIBLE);
+           dock.setText(minimized[0]?"⤢":"↔");
+           dock.setBackground(shape(0x99334961,15));
+           panel.animate().translationX(0).setDuration(200).start();
+       });
        panel.setOnTouchListener(new View.OnTouchListener(){float x,y,startX,startY;
          public boolean onTouch(View v,MotionEvent e){if(e.getActionMasked()==MotionEvent.ACTION_DOWN){x=e.getRawX();y=e.getRawY();startX=v.getTranslationX();startY=v.getTranslationY();return true;}
-           if(e.getActionMasked()==MotionEvent.ACTION_MOVE){v.setTranslationX(startX+e.getRawX()-x);v.setTranslationY(startY+e.getRawY()-y);return true;}return false;}
+           if(e.getActionMasked()==MotionEvent.ACTION_MOVE){v.setTranslationX(startX+e.getRawX()-x);v.setTranslationY(startY+e.getRawY()-y);return true;}
+           if(e.getActionMasked()==MotionEvent.ACTION_UP){float point=e.getRawX()-x+startX;v.animate().translationX(point<0?-px(12):0).setDuration(180).start();return true;}return false;}
        });
        startRoundPlayback(a,round,preview,play);
        handler.postDelayed(()->{try{if(player!=null&&resume>0)player.seekTo(resume);}catch(Exception ignored){}},650);
