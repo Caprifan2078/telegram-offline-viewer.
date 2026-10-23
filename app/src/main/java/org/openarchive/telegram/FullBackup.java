@@ -89,14 +89,19 @@ final class FullBackup {
         }
     }
     static int restore(Context ctx,SharedPreferences prefs,Uri uri,Progress progress) throws Exception {
+        try(InputStream in=ctx.getContentResolver().openInputStream(uri)){
+            if(in==null)throw new IOException("Архив недоступен");
+            return restore(ctx,prefs,in,progress);
+        }
+    }
+    static int restore(Context ctx,SharedPreferences prefs,InputStream streamed,Progress progress)throws Exception{
         File staging=new File(new File(ctx.getFilesDir(),"telegram_imports"),"restore-"+UUID.randomUUID().toString().replace("-",""));
         if(!staging.mkdirs())throw new IOException("Невозможно подготовить восстановление");
         File metadata=new File(staging,"metadata.zip");
         int count=0;long total=0;boolean complete=false;JSONObject manifest=null;
         try{
-            try(InputStream raw=ctx.getContentResolver().openInputStream(uri)){
-                if(raw==null)throw new IOException("Архив не читается");
-                try(ZipInputStream zip=new ZipInputStream(new BufferedInputStream(raw,128*1024))){
+            {
+                try(ZipInputStream zip=new ZipInputStream(new BufferedInputStream(streamed,128*1024))){
                     ZipEntry entry;
                     while((entry=zip.getNextEntry())!=null){
                         if(entry.isDirectory()){zip.closeEntry();continue;}
