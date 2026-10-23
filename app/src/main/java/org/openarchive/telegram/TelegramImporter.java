@@ -113,8 +113,8 @@ class TelegramImporter {
         }
         if("video".equals(base))return round?"round":gif?"gif":"video";
         if("audio".equals(base))return voice?"voice":"audio";
-        if(sticker)return "sticker";
         if("image".equals(base)&&gif)return "gif";
+        if(sticker)return "sticker";
         return base;
     }
     static boolean supported(String path){
