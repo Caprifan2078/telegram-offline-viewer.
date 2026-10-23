@@ -158,7 +158,7 @@ public class MainActivity extends Activity {
         sideMenuItem(pane,"⇩  Восстановить архив","Импорт резервной копии приложения",()->{dialog.dismiss();restorePicker();});
         sideMenuItem(pane,"⚙  Настройки","Имя, цвета участников и другое",()->{dialog.dismiss();settingsMenu();});
         View gap=new View(this);pane.addView(gap,new LinearLayout.LayoutParams(1,0,1));
-        TextView label=text("Telegram Archive  ·  v"+"0.17-beta"+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
+        TextView label=text("Telegram Archive  ·  v"+"0.18-beta"+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
         label.setPadding(px(4),px(16),0,px(12));pane.addView(label);
         overlay.setOnClickListener(v->dialog.dismiss());pane.setOnClickListener(v->{});
         dialog.setContentView(overlay);dialog.show();Window w=dialog.getWindow();if(w!=null)w.setLayout(-1,-1);
