@@ -45,6 +45,12 @@ final class ArchiveBackup {
         }
     }
     static void write(Context ctx,SharedPreferences prefs,Uri destination,Progress progress) throws Exception {
+        try(OutputStream out=ctx.getContentResolver().openOutputStream(destination,"w")){
+            if(out==null)throw new IOException("Невозможно открыть место сохранения");
+            write(ctx,prefs,out,progress);
+        }
+    }
+    static void write(Context ctx,SharedPreferences prefs,OutputStream output,Progress progress) throws Exception {
         JSONArray chats=new JSONArray(prefs.getString("archive_registry","[]"));
         JSONObject manifest=new JSONObject();
         manifest.put("format","telegram-archive-metadata");manifest.put("version",VERSION);
@@ -56,9 +62,7 @@ final class ArchiveBackup {
             if(v instanceof String||v instanceof Number||v instanceof Boolean)settings.put(item.getKey(),v);
         }
         manifest.put("settings",settings);
-        try(OutputStream file=ctx.getContentResolver().openOutputStream(destination,"w")){
-            if(file==null)throw new IOException("Невозможно открыть файл для записи");
-            try(ZipOutputStream zip=new ZipOutputStream(new BufferedOutputStream(file))){
+        try(ZipOutputStream zip=new ZipOutputStream(new BufferedOutputStream(output))){
                 for(int i=0;i<chats.length();i++){
                     JSONObject chat=chats.getJSONObject(i);
                     String key=chat.optString("key","default"),name=chat.optString("name","Переписка");
@@ -79,7 +83,6 @@ final class ArchiveBackup {
                 zip.putNextEntry(new ZipEntry("manifest.json"));
                 byte[] bytes=manifest.toString().getBytes("UTF-8");
                 zip.write(bytes);zip.closeEntry();
-            }
         }
     }
     private static File stage(Context ctx,ZipInputStream zip,ZipEntry entry,Map<String,File> files,Map<String,String> hashes) throws Exception{
