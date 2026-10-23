@@ -1,7 +1,7 @@
-name: Build Telegram Archive v0.15 APK
+name: Build Telegram Archive v0.16 APK
 on:
   push:
-    branches: [main, feat/v015-player-gallery-polish]
+    branches: [main, feat/v016-archive-import-zoom-dock]
   workflow_dispatch:
 permissions:
   contents: read
@@ -33,6 +33,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Telegram-Archive-v0.15-APK
+          name: Telegram-Archive-v0.16-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
