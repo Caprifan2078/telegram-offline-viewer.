@@ -18,9 +18,9 @@ final class BackupVerifier {
         int chats,messages,favorites,pins,notes,mediaFiles;
         long bytes;
         String summary(){
-            return "Переписок: "+chats+"\\nСообщений: "+messages+"\\nИзбранных сообщений: "+favorites+
-                "\\nЗакреплений: "+pins+"\\nЗаметок: "+notes+"\\nФайлов медиа: "+mediaFiles+
-                "\\nПрочитано: "+(bytes/1048576)+" МБ";
+            return "Переписок: "+chats+"\nСообщений: "+messages+"\nИзбранных сообщений: "+favorites+
+                "\nЗакреплений: "+pins+"\nЗаметок: "+notes+"\nФайлов медиа: "+mediaFiles+
+                "\nПрочитано: "+(bytes/1048576)+" МБ";
         }
     }
     /** Dry-run in app cache only: no changes to production DBs or chat registry. */
@@ -45,9 +45,9 @@ final class BackupVerifier {
                 if(++count>260000)throw new IOException("Превышен лимит файлов");
                 String name=entry.getName();
                 if(!entries.add(name))throw new IOException("Повторяющийся файл");
-                if(name==null||name.startsWith("/")||name.contains("\\\\")||name.contains("\\0"))throw new IOException("Опасный путь в ZIP");
+                if(name==null||name.startsWith("/")||name.indexOf(92)>=0||name.indexOf(0)>=0)throw new IOException("Опасный путь в ZIP");
                 for(String part:name.split("/"))if(part.equals("..")||part.equals("."))throw new IOException("Опасный путь");
-                boolean database=name.matches("db/(?:chat-[0-9]{1,5}|notes)\\\\.sqlite");
+                boolean database=name.matches("db/(?:chat-[0-9]{1,5}|notes)\\.sqlite");
                 boolean innerMeta=name.equals("metadata.zip");
                 if(innerMeta){full=true;inner=new File(stage,"metadata.zip");}
                 File extracted=database?new File(stage,name.replace('/','_')):innerMeta?inner:null;
