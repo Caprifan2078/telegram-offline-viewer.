@@ -846,6 +846,14 @@ public class MainActivity extends Activity {
                 }
             });
         }
+        android.view.ScaleGestureDetector videoZoom=new android.view.ScaleGestureDetector(this,new android.view.ScaleGestureDetector.SimpleOnScaleGestureListener(){
+            float zoom=1f;
+            @Override public boolean onScale(android.view.ScaleGestureDetector detector){
+                zoom=Math.max(1f,Math.min(3f,zoom*detector.getScaleFactor()));
+                holder.setScaleX(zoom);holder.setScaleY(zoom);return true;
+            }
+        });
+        holder.setOnTouchListener((v,e)->{videoZoom.onTouchEvent(e);return e.getPointerCount()>1;});
         holder.setTag(controls);
         holder.setOnClickListener(v->{
             if(chatCircle){
@@ -1144,7 +1152,7 @@ public class MainActivity extends Activity {
         final int[] generation={0};
         final java.util.function.Consumer<MessageDb.Attachment>[] show=new java.util.function.Consumer[1];
         show[0]=item->{
-            current[0]=item;int id=++generation[0];
+            current[0]=item;int id=++generation[0];picture.setScaleX(1f);picture.setScaleY(1f);
             caption.setText(day(item.date)+" · "+(item.author==null?"Фото":item.author));
             DocumentFolder source=folder;
             if(source==null)return;
@@ -1191,13 +1199,22 @@ public class MainActivity extends Activity {
                 });
             });
         };
+        final android.view.ScaleGestureDetector photoZoom=new android.view.ScaleGestureDetector(this,new android.view.ScaleGestureDetector.SimpleOnScaleGestureListener(){
+            float scale=1f;
+            @Override public boolean onScale(android.view.ScaleGestureDetector d){
+                scale=Math.max(1f,Math.min(4f,scale*d.getScaleFactor()));
+                picture.setScaleX(scale);picture.setScaleY(scale);return true;
+            }
+        });
         picture.setOnTouchListener(new View.OnTouchListener(){
             float x,y;
             public boolean onTouch(View v,MotionEvent e){
+                photoZoom.onTouchEvent(e);
+                if(e.getPointerCount()>1)return true;
                 if(e.getActionMasked()==MotionEvent.ACTION_DOWN){x=e.getX();y=e.getY();return true;}
                 if(e.getActionMasked()==MotionEvent.ACTION_UP){
                     float dx=e.getX()-x;
-                    if(Math.abs(dx)>px(55)&&Math.abs(dx)>Math.abs(e.getY()-y)){
+                    if(picture.getScaleX()<=1.01f&&Math.abs(dx)>px(55)&&Math.abs(dx)>Math.abs(e.getY()-y)){
                         picture.animate().translationX(dx<0?-px(85):px(85)).alpha(0f).setDuration(150).withEndAction(()->{
                             MessageDb.Attachment old=current[0];
                             worker.execute(()->{
