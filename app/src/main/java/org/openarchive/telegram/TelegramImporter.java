@@ -102,17 +102,19 @@ class TelegramImporter {
         boolean voice=low.contains("voice_messages")||low.contains("voice_message")||low.contains("audio_message")||low.contains("voice_note");
         boolean round=low.contains("round_video")||low.contains("video_message")||low.contains("video_note");
         boolean sticker=low.contains("sticker")||low.endsWith(".tgs")||low.endsWith(".webp")&&low.contains("stickers");
+        boolean gif=low.matches(".*\\.gif(?:[?#].*)?$")||low.contains("/animations/")||low.contains("/gifs/")||low.contains("/animated/")||low.contains("animation")&&low.endsWith(".mp4");
         for(Element p=node;p!=null;p=p.parent()){
             String cls=p.className().toLowerCase(Locale.ROOT);
             if(cls.contains("voice_message")||cls.contains("voice_note")||cls.contains("audio_message"))voice=true;
             if(cls.contains("round_video")||cls.contains("video_message")||cls.contains("video_note"))round=true;
             if(cls.contains("sticker"))sticker=true;
+            if(cls.contains("gif")||cls.contains("animation")||cls.contains("animated"))gif=true;
             if(p.hasClass("message"))break;
         }
-        if("video".equals(base))return round?"round":"video";
+        if("video".equals(base))return round?"round":gif?"gif":"video";
         if("audio".equals(base))return voice?"voice":"audio";
         if(sticker)return "sticker";
-        if("image".equals(base)&&low.endsWith(".gif"))return "gif";
+        if("image".equals(base)&&gif)return "gif";
         return base;
     }
     static boolean supported(String path){
