@@ -44,9 +44,10 @@ final class BackupVerifier {
                 if(entry.isDirectory()){zip.closeEntry();continue;}
                 if(++count>260000)throw new IOException("Превышен лимит файлов");
                 String name=entry.getName();
-                if(!entries.add(name))throw new IOException("Повторяющийся файл");
+                
                 if(name==null||name.startsWith("/")||name.indexOf(92)>=0||name.indexOf(0)>=0)throw new IOException("Опасный путь в ZIP");
                 for(String part:name.split("/"))if(part.equals("..")||part.equals("."))throw new IOException("Опасный путь");
+                if(!entries.add(name))throw new IOException("Повторяющийся файл");
                 boolean database=name.matches("db/(?:chat-[0-9]{1,5}|notes)\\.sqlite");
                 boolean innerMeta=name.equals("metadata.zip");
                 if(innerMeta){full=true;inner=new File(stage,"metadata.zip");}
