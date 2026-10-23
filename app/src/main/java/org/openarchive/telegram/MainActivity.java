@@ -799,7 +799,12 @@ public class MainActivity extends Activity {
         LinearLayout details=column();details.setPadding(px(5),0,0,0);inner.addView(details,new LinearLayout.LayoutParams(0,-2,1));
         TextView bars=text("▂▆▃▇▄▅▂▆▃▄▇▂▅",gallery?11:15,ACCENT);bars.setSingleLine(true);details.addView(bars);
         TextView duration=text("00:00",11,SUB);details.addView(duration);loadDuration(a.path,duration);
-        play.setOnClickListener(v->startAudio(a.path,play,duration));
+        play.setOnClickListener(v->{
+            startAudio(a.path,play,duration);
+            playingAttachment=a;
+            playerStrip.setVisibility(View.VISIBLE);
+            playerText.setText((a.kind.equals("voice")?"Голосовое · ":"Музыка · ")+(a.author==null?"":a.author));
+        });
         outer.setOnLongClickListener(v->{mediaActions(a);return true;});return outer;
     }
     private void mediaActions(MessageDb.Attachment a){
@@ -1070,7 +1075,10 @@ public class MainActivity extends Activity {
             MessageDb.Attachment found=db.adjacentMedia(current.kind,current.messageId,current.id,forward);
             runOnUiThread(()->{if(found==null){toast("Других сообщений нет");return;}
                 if(found.kind.equals("round"))showFloatingRound(found);
-                else if(found.kind.equals("voice")||found.kind.equals("audio"))startAudio(found.path,playerPause,playerText);
+                else if(found.kind.equals("voice")||found.kind.equals("audio")){
+                    startAudio(found.path,playerPause,playerText);
+                    playingAttachment=found;playerStrip.setVisibility(View.VISIBLE);
+                }
             });
         });
     }
