@@ -17,7 +17,8 @@ final class BackupVerifier {
     }
     static Result verifyStream(InputStream source,Progress progress)throws Exception{
         Result result=new Result();boolean metadata=false,manifest=false;
-        try(ZipInputStream zip=new ZipInputStream(new BufferedInputStream(source,128*1024))){
+        InputStream keep=new FilterInputStream(source){@Override public void close()throws IOException{}};
+        try(ZipInputStream zip=new ZipInputStream(new BufferedInputStream(keep,128*1024))){
             ZipEntry entry;byte[] buf=new byte[128*1024];
             while((entry=zip.getNextEntry())!=null){
                 if(entry.isDirectory()){zip.closeEntry();continue;}
@@ -36,6 +37,7 @@ final class BackupVerifier {
                 if(result.files%200==0)progress.onProgress("Проверяю: "+result.files+" файлов");
             }
         }
+        byte[] remaining=new byte[128*1024];while(source.read(remaining)!=-1){}
         if(result.files==0)throw new IOException("Пустой ZIP");
         if(result.full&&(!metadata||!manifest))throw new IOException("Неполная резервная копия");
         progress.onProgress("Контрольные суммы ZIP проверены: "+result.files+" файлов");
