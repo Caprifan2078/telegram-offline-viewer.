@@ -258,7 +258,7 @@ public class MainActivity extends Activity {
         JSONObject choice=null;for(int i=0;i<archives.length();i++){JSONObject o=archives.optJSONObject(i);if(o!=null&&key.equals(o.optString("key")))choice=o;}
         if(choice==null)return;closeFloatingRound();stopPlayback();++loadToken;activeKey=key;activeName=choice.optString("name","Архив");saveRegistry();
         if(db!=null)db.close();db=new MessageDb(this,activeKey);
-        String path=choice.optString("tree","");folder=path.isEmpty()?null:new DocumentFolder(getContentResolver(),Uri.parse(path));
+        String path=choice.optString("tree","");folder=path.isEmpty()?null:path.startsWith("local:")?new DocumentFolder(getContentResolver(),new java.io.File(path.substring(6))):new DocumentFolder(getContentResolver(),Uri.parse(path));
         chatOffset=searchOffset=mediaOffset=favOffset=0;autoLoaded=PAGE;home=false;screen="chat";returnScreen="";chatOffset=getPreferences(MODE_PRIVATE).getInt("read_offset_"+activeKey,0);
         pendingRestoreId=getPreferences(MODE_PRIVATE).getLong("read_id_"+activeKey,-1);
         pendingRestoreTop=getPreferences(MODE_PRIVATE).getInt("read_top_"+activeKey,0);
@@ -505,6 +505,17 @@ public class MainActivity extends Activity {
         },c.get(Calendar.YEAR),c.get(Calendar.MONTH),c.get(Calendar.DAY_OF_MONTH)).show();
     }
     private void chooseFolder(){
+        new AlertDialog.Builder(this).setTitle("Добавить переписку").setItems(
+            new String[]{"Выбрать папку Telegram","Выбрать ZIP или RAR"},
+            (d,selected)->{if(selected==0)chooseExistingFolder();else chooseCompressedArchive();}).show();
+    }
+    private void chooseCompressedArchive(){
+        Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.setType("*/*");intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivityForResult(intent,57);
+    }
+    private void chooseExistingFolder(){
         Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         startActivityForResult(i,PICK_FOLDER);
@@ -521,6 +532,21 @@ public class MainActivity extends Activity {
             String label=uri.getLastPathSegment();String mime=getContentResolver().getType(uri);
             worker.execute(()->{savedStore.add("",label,uri.toString(),mime);runOnUiThread(this::renderSaved);});return;
         }
+        if(request==57&&result==RESULT_OK&&data!=null&&data.getData()!=null){
+            Uri source=data.getData();String name="Telegram.zip";
+            try(android.database.Cursor c=getContentResolver().query(source,new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null)){
+                if(c!=null&&c.moveToFirst())name=c.getString(0);
+            }catch(Exception ignored){}
+            String low=name==null?"":name.toLowerCase(Locale.ROOT);
+            String ext=low.endsWith(".rar")?"rar":low.endsWith(".zip")?"zip":"";
+            if(ext.isEmpty()){toast("Нужен ZIP или RAR");return;}
+            final String displayName=name;
+            new AlertDialog.Builder(this).setTitle("Импорт "+displayName)
+                .setMessage("Архив автоматически распакуется во внутреннюю папку приложения. Для медиа потребуется свободное место.")
+                .setNegativeButton("Отмена",null)
+                .setPositiveButton("Импортировать",(d,w)->importCompressed(source,ext,displayName)).show();
+            return;
+        }
         if(request!=PICK_FOLDER||result!=RESULT_OK||data==null||data.getData()==null)return;
         Uri uri=data.getData();
         try{getContentResolver().takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION);}
@@ -533,6 +559,29 @@ public class MainActivity extends Activity {
                 .setMessage("Будут проиндексированы все messages*.html. Фото, видео и голосовые останутся в этой папке. Текущие сообщения заменятся только после успешного импорта. Избранное по возможности сохранится.")
                 .setPositiveButton("Импортировать",(d,w)->importArchive()).setNegativeButton("Отмена",null).show();
         }).setNegativeButton("Отмена",null).show();
+    }
+    private void importCompressed(Uri source,String extension,String label){
+        if(importing)return;
+        importing=true;folderButton.setEnabled(false);status.setText("Распаковка "+label+"…");
+        String key=UUID.randomUUID().toString().replace("-","");
+        worker.execute(()->{
+            try{
+                java.io.File root=ArchiveFileImport.extract(this,source,extension,key,msg->runOnUiThread(()->status.setText(msg)));
+                MessageDb fresh=new MessageDb(this,key);
+                try{TelegramImporter.importFiles(getContentResolver(),new DocumentFolder(getContentResolver(),root),fresh,msg->runOnUiThread(()->status.setText(msg)));}finally{fresh.close();}
+                runOnUiThread(()->{
+                    importing=false;folderButton.setEnabled(true);
+                    try{
+                        JSONObject o=new JSONObject();o.put("key",key);o.put("name",label);
+                        o.put("tree","local:"+root.getAbsolutePath());archives.put(o);
+                        activateArchive(key);status.setText("Импорт завершён");
+                    }catch(Exception error){toast("Ошибка регистрации чата: "+error.getMessage());}
+                });
+            }catch(Exception error){
+                ArchiveFileImport.deleteTree(new java.io.File(new java.io.File(getFilesDir(),"telegram_imports"),key));
+                runOnUiThread(()->{importing=false;folderButton.setEnabled(true);status.setText("Ошибка архива: "+error.getMessage());});
+            }
+        });
     }
     private void importArchive(){
         if(folder==null||importing)return;closeFloatingRound();stopPlayback();importing=true;folderButton.setEnabled(false);status.setText("Создаю локальную базу, не копируя медиа…");
