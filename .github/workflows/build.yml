@@ -1,7 +1,7 @@
-name: Build Telegram Archive v0.19 APK — archive and dock verification
+name: Build Telegram Archive v0.20 APK — archive and dock verification
 on:
   push:
-    branches: [main, feat/v019-secure-verified-backups-polish]
+    branches: [main, feat/v020-sandbox-restore-motion]
   workflow_dispatch:
 permissions:
   contents: read
@@ -33,6 +33,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Telegram-Archive-v0.19-APK
+          name: Telegram-Archive-v0.20-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
