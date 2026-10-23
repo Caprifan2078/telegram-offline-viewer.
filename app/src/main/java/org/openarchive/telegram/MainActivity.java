@@ -86,7 +86,7 @@ public class MainActivity extends Activity {
         @Override protected int sizeOf(String key,Bitmap b){return b.getByteCount();}
     };
     private final LruCache<String,String> durations=new LruCache<>(250);
-    private MessageDb db;private DocumentFolder folder;private SavedStore savedStore;private boolean loadingMore=false;private int autoLoaded=PAGE;private boolean home=true;private LinearLayout bottomPager;
+    private MessageDb db;private DocumentFolder folder;private SavedStore savedStore;private boolean loadingMore=false;private int autoLoaded=PAGE;private int searchLoaded=PAGE;private boolean home=true;private boolean autoFloating=false;private LinearLayout bottomPager;
     private JSONArray archives=new JSONArray();private String activeKey="default",activeName="Архив";private long pinnedFocus=-1;
     private LinearLayout pinnedBar;
     private FrameLayout root, floatingPanel;
@@ -102,7 +102,7 @@ public class MainActivity extends Activity {
     private long highlightId=-1;
     private String info="";
     private MediaPlayer player;private String playingPath="";private TextureView activeTexture;
-    private Runnable progressUpdater;
+    private Runnable progressUpdater;private MessageDb.Attachment playingAttachment;private LinearLayout playerStrip;private TextView playerText;private Button playerPause;private FrameLayout inlineHolder;private int floatingStart=0;
     private RoundControls activeRound;
     private static final class RoundControls {
         SeekBar seek;
@@ -187,22 +187,47 @@ public class MainActivity extends Activity {
         }
     }
     private void appendMessages(){
-        if(loadingMore||!screen.equals("chat")||home||autoLoaded>=total)return;
-        loadingMore=true;final int token=loadToken,offset=chatOffset+autoLoaded;
+        if(loadingMore||home||(!screen.equals("chat")&&!screen.equals("search")))return;
+        boolean searching=screen.equals("search");
+        int loaded=searching?searchLoaded:autoLoaded;
+        if(loaded>=total)return;
+        loadingMore=true;
+        final int token=loadToken,offset=getOffset()+loaded;
+        final String term=q,who=byAuthor;final boolean mode=deep,withMedia=onlyMedia;
         worker.execute(()->{
-            List<MessageDb.Item> part=db.page(offset,PAGE,"",false,"",false,false);
-            Map<Long,List<MessageDb.Attachment>> files=db.attachmentsForMessages(part);
-            runOnUiThread(()->{
-                loadingMore=false;if(token!=loadToken||!screen.equals("chat")||home)return;
-                if(part.isEmpty())return;
-                autoLoaded+=part.size();
-                // Render only the additional part, leaving previous messages and scroll position intact.
-                int lastY=scroll.getScrollY();
-                renderMessages(part,files,false,true);
-                scroll.post(()->scroll.scrollTo(0,lastY));
-                pageLabel.setText((chatOffset+1)+"–"+Math.min(total,chatOffset+autoLoaded)+" / "+total);
-            });
+            try{
+                List<MessageDb.Item> part=db.page(offset,PAGE,searching?term:"",searching&&mode,searching&&mode?who:"",searching&&mode&&withMedia,false);
+                Map<Long,List<MessageDb.Attachment>> files=db.attachmentsForMessages(part);
+                runOnUiThread(()->{
+                    loadingMore=false;if(token!=loadToken||home||part.isEmpty())return;
+                    if(searching)searchLoaded+=part.size();else autoLoaded+=part.size();
+                    int y=scroll.getScrollY();
+                    renderMessages(part,files,searching,true);
+                    scroll.post(()->scroll.scrollTo(0,y));
+                    pageLabel.setText((getOffset()+1)+"–"+Math.min(total,getOffset()+(searching?searchLoaded:autoLoaded))+" / "+total);
+                });
+            }catch(Exception error){runOnUiThread(()->{loadingMore=false;status.setText("Ошибка подгрузки: "+error.getMessage());});}
         });
+    }
+    private void saveReadingProgress(){
+        if(home||!screen.equals("chat")||scroll==null||list==null)return;
+        int child=0;int y=scroll.getScrollY();
+        for(int i=0;i<list.getChildCount();i++){
+            View view=list.getChildAt(i);
+            if(view.getBottom()>y){child=i;break;}
+        }
+        int approx=chatOffset+Math.min(autoLoaded-1,Math.max(0,child/2));
+        getPreferences(MODE_PRIVATE).edit().putInt("read_offset_"+activeKey,approx).apply();
+    }
+    private void checkAutoFloat(){
+        if(player==null||inlineHolder==null||floatingPanel!=null||!screen.equals("chat"))return;
+        int[] p=new int[2],viewport=new int[2];inlineHolder.getLocationOnScreen(p);scroll.getLocationOnScreen(viewport);
+        if(p[1]+inlineHolder.getHeight()<viewport[1]||p[1]>viewport[1]+scroll.getHeight()){
+            if(playingAttachment!=null&&playingAttachment.kind.equals("round")){
+                int ms=0;try{ms=player.getCurrentPosition();}catch(Exception ignored){}
+                floatingStart=ms;showFloatingRound(playingAttachment);autoFloating=true;
+            }
+        }
     }
     private void loadArchiveRegistry(){
         try{archives=new JSONArray(getPreferences(MODE_PRIVATE).getString("archive_registry","[]"));}catch(Exception e){archives=new JSONArray();}
@@ -220,12 +245,13 @@ public class MainActivity extends Activity {
         try{JSONObject o=new JSONObject();String key=UUID.randomUUID().toString().replace("-","");o.put("key",key);o.put("name",name);o.put("tree",tree);archives.put(o);activateArchive(key);}catch(Exception e){toast("Ошибка добавления чата");}
     }
     private void activateArchive(String key){
+        saveReadingProgress();
         if(importing){toast("Импорт ещё идёт");return;}
         JSONObject choice=null;for(int i=0;i<archives.length();i++){JSONObject o=archives.optJSONObject(i);if(o!=null&&key.equals(o.optString("key")))choice=o;}
         if(choice==null)return;closeFloatingRound();stopPlayback();++loadToken;activeKey=key;activeName=choice.optString("name","Архив");saveRegistry();
         if(db!=null)db.close();db=new MessageDb(this,activeKey);
         String path=choice.optString("tree","");folder=path.isEmpty()?null:new DocumentFolder(getContentResolver(),Uri.parse(path));
-        chatOffset=searchOffset=mediaOffset=favOffset=0;autoLoaded=PAGE;home=false;screen="chat";returnScreen="";showPage();
+        chatOffset=searchOffset=mediaOffset=favOffset=0;autoLoaded=PAGE;home=false;screen="chat";returnScreen="";chatOffset=getPreferences(MODE_PRIVATE).getInt("read_offset_"+activeKey,0);showPage();
     }
     private void chatPicker(){
         String[] labels=new String[archives.length()+1];for(int i=0;i<archives.length();i++){JSONObject o=archives.optJSONObject(i);labels[i]=o==null?"Чат":o.optString("name","Чат");}
@@ -330,7 +356,7 @@ public class MainActivity extends Activity {
         LinearLayout head=row();base.addView(head,p(-1,55));
         navBack=btn("‹");navBack.setTextSize(25);navBack.setGravity(Gravity.CENTER);
         head.addView(navBack,p(40,42));
-        navBack.setOnClickListener(v->{if(!home){home=true;screen="chat";returnScreen="";showPage();}});
+        navBack.setOnClickListener(v->{if(!home){saveReadingProgress();home=true;screen="chat";returnScreen="";showPage();}});
         TextView logo=text("◉",26,ACCENT);logo.setGravity(Gravity.CENTER);head.addView(logo,p(37,42));
         LinearLayout headings=column();headings.setGravity(Gravity.CENTER_VERTICAL);
         head.addView(headings,new LinearLayout.LayoutParams(0,px(50),1));
@@ -349,7 +375,7 @@ public class MainActivity extends Activity {
         searchArea=column();toolArea.addView(searchArea,p(-1,-2));
         status=text("",11,SUB);status.setPadding(px(8),px(4),px(8),px(6));status.setMaxLines(3);base.addView(status,p(-1,-2));
         scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(false);
-        scroll.setOnScrollChangeListener((View.OnScrollChangeListener)(v,x,y,ox,oy)->{if(!home&&screen.equals("chat")&&!loadingMore&&list.getHeight()>0&&y+scroll.getHeight()>list.getHeight()-px(260)&&autoLoaded<total){appendMessages();}});
+        scroll.setOnScrollChangeListener((View.OnScrollChangeListener)(v,x,y,ox,oy)->{if(!home&&(screen.equals("chat")||screen.equals("search"))&&!loadingMore&&list.getHeight()>0&&y+scroll.getHeight()>list.getHeight()-px(300)&&((screen.equals("chat")?autoLoaded:searchLoaded)<total)){appendMessages();}checkAutoFloat();saveReadingProgress();});
         FrameLayout scrollHost=new FrameLayout(this);
         base.addView(scrollHost,new LinearLayout.LayoutParams(-1,0,1));
         scrollHost.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
@@ -430,7 +456,7 @@ public class MainActivity extends Activity {
         if(searchInput!=null)q=searchInput.getText().toString().trim();
         if(authorInput!=null&&deep)byAuthor=authorInput.getText().toString().trim();
         if(mediaOnly!=null&&deep)onlyMedia=mediaOnly.isChecked();
-        searchOffset=0;configureBars();hideKeyboard();showPage();
+        searchOffset=0;searchLoaded=PAGE;configureBars();hideKeyboard();showPage();
     }
     private void hideKeyboard(){try{((InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(base.getWindowToken(),0);}catch(Exception ignored){}}
     private void identityDialog(){
@@ -464,7 +490,7 @@ public class MainActivity extends Activity {
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         startActivityForResult(i,PICK_FOLDER);
     }
-    @Override public void onBackPressed(){if(screen.equals("saved")||(!home&&returnScreen.isEmpty())){home=true;screen="chat";bottomNav.setVisibility(View.VISIBLE);showPage();return;}if(!returnScreen.isEmpty()){restoreReturn();return;}super.onBackPressed();}
+    @Override public void onBackPressed(){if(screen.equals("saved")||(!home&&returnScreen.isEmpty())){saveReadingProgress();home=true;screen="chat";bottomNav.setVisibility(View.VISIBLE);showPage();return;}if(!returnScreen.isEmpty()){restoreReturn();return;}super.onBackPressed();}
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
         if(request==28&&result==RESULT_OK&&data!=null&&data.getData()!=null){
@@ -512,14 +538,14 @@ public class MainActivity extends Activity {
                 int count=gallery?db.mediaCount(kind):db.count(find?search:"",find&&deepMode,find&&deepMode?who:"",find&&deepMode&&hasMedia,favs);
                 int pos=count==0?0:Math.min(requested,Math.max(0,count-1));
                 List<MessageDb.Attachment> attachments=gallery?db.mediaPage(kind,pos,MEDIA_PAGE):null;
-                List<MessageDb.Item> messages=gallery?null:db.page(pos,tab.equals("chat")?Math.max(PAGE,autoLoaded):PAGE,find?search:"",find&&deepMode,find&&deepMode?who:"",find&&deepMode&&hasMedia,favs);
+                List<MessageDb.Item> messages=gallery?null:db.page(pos,tab.equals("chat")?Math.max(PAGE,autoLoaded):tab.equals("search")?Math.max(PAGE,searchLoaded):PAGE,find?search:"",find&&deepMode,find&&deepMode?who:"",find&&deepMode&&hasMedia,favs);
                 Map<Long,List<MessageDb.Attachment>> links=messages==null?new HashMap<>():db.attachmentsForMessages(messages);
                 MessageDb.SearchStats stats=find?db.searchStats(search,deepMode,deepMode?who:"",deepMode&&hasMedia):null;
                 runOnUiThread(()->{
                     if(isFinishing()||token!=loadToken)return;
                     total=count;setOffset(pos);list.removeAllViews();
                     if(gallery)renderMedia(attachments);else renderMessages(messages,links,find);
-                    bottomPager.setVisibility(tab.equals("chat")?View.GONE:View.VISIBLE);
+                    bottomPager.setVisibility(tab.equals("chat")||tab.equals("search")?View.GONE:View.VISIBLE);
                     int shown=gallery?attachments.size():messages.size();
                     verticalTimeline.setVisibility("chat".equals(tab)?View.VISIBLE:View.GONE);
                     if("chat".equals(tab))verticalTimeline.setPosition(pos,count);
@@ -1006,7 +1032,7 @@ public class MainActivity extends Activity {
     }
 
     private int darken(int color){return Color.rgb(Math.round(Color.red(color)*.8f),Math.round(Color.green(color)*.8f),Math.round(Color.blue(color)*.8f));}
-    private String colorKey(String name){return "sender_"+activeKey+"_"+(name==null?"":name.toLowerCase(Locale.ROOT));}
+    private String colorKey(String name){return "sender_"+activeKey+"_"+MessageDb.normalizedAuthor(name);}
     private int authorColor(String name){
        int idx=((name==null?0:name.hashCode())&Integer.MAX_VALUE)%participantColors.length;
        return getPreferences(MODE_PRIVATE).getInt(colorKey(name),name!=null&&name.equalsIgnoreCase(mine)?OUTGOING:participantColors[idx]);
