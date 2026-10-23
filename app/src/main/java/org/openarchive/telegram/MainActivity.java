@@ -79,7 +79,7 @@ public class MainActivity extends Activity {
     private static final int BG=0xff101928,PANEL=0xff182638,INCOMING=0xff233249,OUTGOING=0xff245a55,
             FG=0xfff4f8ff,SUB=0xffaec0d1,ACCENT=0xff67c2f7,CHIP=0xff304a64,HIGHLIGHT=0xff366a87;
     private static final String[] MEDIA_KEYS={"all","round","voice","image","video","audio","file","gif","sticker"};
-    private static final String[] MEDIA_LABELS={"Всё","Видео-сообщения","Голосовые","Фото","Видео","Музыка","Файлы","GIF","Стикеры"};
+    private static final String[] MEDIA_LABELS={"Всё","Видеосообщения","Голосовые","Фото","Видео","Музыка","Файлы","GIF","Стикеры"};
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final ExecutorService mediaWorker=Executors.newFixedThreadPool(2);
     private final Handler handler=new Handler(Looper.getMainLooper());
@@ -735,7 +735,7 @@ public class MainActivity extends Activity {
         }
         scroll.post(()->scroll.scrollTo(0,0));
     }
-    private String mediaLabel(String k){switch(k){case "round":return "Видео-сообщение";case "voice":return "Голосовое";case "video":return "Видео";case "audio":return "Аудио / музыка";case "image":return "Фото";case "gif":return "GIF";case "sticker":return "Стикер";default:return "Файл";}}
+    private String mediaLabel(String k){switch(k){case "round":return "Видеосообщение";case "voice":return "Голосовое";case "video":return "Видео";case "audio":return "Аудио / музыка";case "image":return "Фото";case "gif":return "GIF";case "sticker":return "Стикер";default:return "Файл";}}
     private View mediaTile(MessageDb.Attachment a,boolean gallery){
         if(a.kind.equals("round"))return circle(a,gallery?124:190,!gallery);
         if(a.kind.equals("voice")||a.kind.equals("audio"))return voice(a,gallery);
@@ -882,6 +882,7 @@ public class MainActivity extends Activity {
         });
     }
     private void openMedia(MessageDb.Attachment a){
+        if(a.kind.equals("gif")&&a.path.toLowerCase(Locale.ROOT).matches(".*\\.(mp4|webm|m4v)(\\?.*)?$")){resolveMedia(a.path,this::fullVideo);return;}
         if(a.kind.equals("image")||a.kind.equals("sticker")||a.kind.equals("gif")){openPhotoGallery(a);return;}
         if(a.kind.equals("round")){showFloatingRound(a);return;}
         if(a.kind.equals("video"))resolveMedia(a.path,this::fullVideo);
@@ -1273,7 +1274,7 @@ public class MainActivity extends Activity {
        });
        playingAttachment=a;startInlineRound(a.path,round,preview,play);
        playerStrip.setVisibility(View.VISIBLE);
-       playerText.setText("▶ "+(a.author==null?"Видео-сообщение":a.author));
+       playerText.setText("▶ "+(a.author==null?"Видеосообщение":a.author));
        handler.postDelayed(()->{try{if(player!=null&&resume>0)player.seekTo(resume);}catch(Exception ignored){}},650);
     }
 
