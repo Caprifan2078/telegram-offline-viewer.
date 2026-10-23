@@ -50,6 +50,12 @@ final class FullBackup {
                         progress.show("Сохраняю исходные медиа "+(i+1)+"/"+chats.length());
                         traverse(ctx,source,source.rootId(),"","media/chat-"+i+"/",zip,progress,total,files,0);
                     }
+                    File custom=new File(ctx.getFilesDir(),"personal_images");
+                    File[] photos=custom.listFiles();
+                    if(photos!=null)for(File asset:photos){
+                        if(asset.isFile()&&asset.getName().matches("[a-zA-Z0-9_-]{1,96}\\.jpg"))
+                            writeZipFile(zip,asset,"custom/"+asset.getName());
+                    }
                     index.put("chats",roots);index.put("files",files[0]);index.put("bytes",total[0]);
                     zip.putNextEntry(new ZipEntry("full-manifest.json"));
                     zip.write(index.toString().getBytes("UTF-8"));zip.closeEntry();
@@ -108,7 +114,7 @@ final class FullBackup {
                         if(++count>MAX_FILES+2)throw new IOException("Превышено число файлов");
                         String name=entry.getName();
                         if(!name.equals("metadata.zip")&&!name.equals("full-manifest.json")
-                            &&!name.matches("media/chat-[0-9]{1,4}/.*"))throw new IOException("Недопустимый элемент резервной копии");
+                            &&!name.matches("media/chat-[0-9]{1,4}/.*")&&!name.matches("custom/[a-zA-Z0-9_-]{1,96}\\.jpg"))throw new IOException("Недопустимый элемент резервной копии");
                         if(name.contains("\\")||name.startsWith("/")||name.contains("\0"))throw new IOException("Опасный путь");
                         for(String part:name.split("/"))if(part.equals("..")||part.equals("."))throw new IOException("Опасный путь в ZIP");
                         if(name.equals("full-manifest.json")){
