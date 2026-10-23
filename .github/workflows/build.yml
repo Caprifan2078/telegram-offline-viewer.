@@ -1,7 +1,7 @@
-name: Build Telegram Archive v0.9 APK
+name: Build Telegram Archive v0.10 APK
 on:
   push:
-    branches: [main, feat/v09-chat-hub-saved-infinite-scroll]
+    branches: [main, feat/v010-insets-nav-jump-highlight]
   workflow_dispatch:
 permissions:
   contents: read
