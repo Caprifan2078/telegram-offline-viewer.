@@ -103,7 +103,7 @@ public class MainActivity extends Activity {
     private String screen="chat",mediaKind="all",q="",byAuthor="",mine="",returnScreen="";
     private boolean deep=false,onlyMedia=false,importing=false;
     private int chatOffset=0,searchOffset=0,mediaOffset=0,favOffset=0,total=0,loadToken=0;
-    private long highlightId=-1;private long lastVisibleMessage=-1;private int lastVisibleTop=0;private final Map<Long,View> renderedMessageViews=new HashMap<>();private long pendingRestoreId=-1;private int pendingRestoreTop=0;private boolean restoringBackup=false;private boolean fullBackupMode=true;private char[] backupPassword=null;
+    private long highlightId=-1;private long lastVisibleMessage=-1;private int lastVisibleTop=0;private final Map<Long,View> renderedMessageViews=new HashMap<>();private long pendingRestoreId=-1;private int pendingRestoreTop=0;private boolean restoringBackup=false;private boolean fullBackupMode=true;private char[] backupPassword=null;private String selectedBackupName="";
     private String info="";
     private MediaPlayer player;private String playingPath="";private TextureView activeTexture;
     private Runnable progressUpdater;private MessageDb.Attachment playingAttachment;private LinearLayout playerStrip;private TextView playerText;private Button playerPause;private FrameLayout inlineHolder;private int floatingStart=0;
@@ -595,7 +595,11 @@ public class MainActivity extends Activity {
         super.onActivityResult(request,result,data);
         if(request==43&&result==RESULT_OK&&data!=null&&data.getData()!=null){verifyBackup(data.getData());return;}
         if((request==41||request==42)&&result==RESULT_OK&&data!=null&&data.getData()!=null){
-            if(request==42)askRestorePassword(data.getData());else backupAction(data.getData(),false);return;
+            if(request==42)askRestorePassword(data.getData());else{
+                selectedBackupName=displayDocumentName(data.getData());
+                status.setText("Сохраняю «"+selectedBackupName+"» в выбранную через Android папку…");
+                backupAction(data.getData(),false);
+            }return;
         }
         if(request==28&&result==RESULT_OK&&data!=null&&data.getData()!=null){
             Uri uri=data.getData();
@@ -1371,6 +1375,12 @@ public class MainActivity extends Activity {
           if(i==0)identityDialog();else if(i==1)participantSettings();else if(i==2)groupedParticipantColors();else if(i==3)chatPicker();
           else if(i==4)backupPicker();else restorePicker();
        }).show();}
+    private String displayDocumentName(Uri uri){
+        try(android.database.Cursor c=getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null)){
+            if(c!=null&&c.moveToFirst())return c.getString(0);
+        }catch(Exception ignored){}
+        return uri.getLastPathSegment()==null?"Резервная копия":uri.getLastPathSegment();
+    }
     private void backupPicker(){
         new AlertDialog.Builder(this).setTitle("Создать резервную копию")
             .setMessage("Выбери тип архива. Файл сохранится в папку, которую ты укажешь в системном окне Android. После записи можно проверить контрольные суммы. Не удаляй исходные медиа, пока проверка не завершится.")
@@ -1482,7 +1492,7 @@ public class MainActivity extends Activity {
                         if(fullBackupMode)FullBackup.export(this,prefs,dest,msg->runOnUiThread(()->status.setText(msg)));
                         else ArchiveBackup.write(this,prefs,dest,msg->runOnUiThread(()->status.setText(msg)));
                     }
-                    runOnUiThread(()->{restoringBackup=false;status.setText("Архив сохранён в выбранной тобой папке. Проверь копию перед удалением исходников.");toast("Экспорт завершён");});
+                    runOnUiThread(()->{restoringBackup=false;status.setText("Сохранено: «"+selectedBackupName+"». Папка выбрана в системном окне Android. Проверь архив перед удалением исходников.");toast("Экспорт завершён");});
                 }
             }catch(Exception error){
                 runOnUiThread(()->{restoringBackup=false;status.setText("Ошибка: "+error.getMessage());});
