@@ -16,16 +16,21 @@ class DocumentFolder {
     static class Entry { String id,name,mime; Entry(String i,String n,String m){id=i;name=n;mime=m;} }
     private final ContentResolver resolver;
     private final Uri tree;
+    private final java.io.File localRoot;
     private final String rootId;
     private final Map<String,String> folderIds = new HashMap<>();
     private final Map<String,Map<String,Entry>> lookupCache = new LinkedHashMap<String,Map<String,Entry>>(4,0.75f,true) {
         @Override protected boolean removeEldestEntry(java.util.Map.Entry<String,Map<String,DocumentFolder.Entry>> e) { return size()>3; }
     };
     DocumentFolder(ContentResolver r,Uri uri) {
-        resolver=r; tree=uri; rootId=DocumentsContract.getTreeDocumentId(uri);
+        resolver=r; tree=uri; localRoot=null;rootId=DocumentsContract.getTreeDocumentId(uri);
         folderIds.put("",rootId);
     }
+    DocumentFolder(ContentResolver r,java.io.File root) {
+        resolver=r;tree=null;localRoot=root;rootId=root.getAbsolutePath();folderIds.put("",rootId);
+    }
     List<Entry> children(String parentId) {
+        if(localRoot!=null){ArrayList<Entry> out=new ArrayList<>();java.io.File[] files=new java.io.File(parentId).listFiles();if(files!=null)for(java.io.File f:files)out.add(new Entry(f.getAbsolutePath(),f.getName(),f.isDirectory()?DocumentsContract.Document.MIME_TYPE_DIR:"application/octet-stream"));return out;}
         ArrayList<Entry> result=new ArrayList<>();
         Uri uri=DocumentsContract.buildChildDocumentsUriUsingTree(tree,parentId);
         String[] columns={DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -35,7 +40,7 @@ class DocumentFolder {
         }
         return result;
     }
-    Uri uriFor(String id) { return DocumentsContract.buildDocumentUriUsingTree(tree,id); }
+    Uri uriFor(String id) { return localRoot!=null?Uri.fromFile(new java.io.File(id)):DocumentsContract.buildDocumentUriUsingTree(tree,id); }
     List<Entry> htmlParts() {
         List<Entry> parts=new ArrayList<>();
         for(Entry e:children(rootId))if(e.name.matches("(?i)^messages\\d*\\.html$"))parts.add(e);
@@ -53,6 +58,7 @@ class DocumentFolder {
         while(s.startsWith("./"))s=s.substring(2);
         s=s.split("[?#]",2)[0];
         if(s.startsWith("/") || s.contains(":") || s.startsWith("//"))return null;
+        if(localRoot!=null){try{java.io.File file=new java.io.File(localRoot,s);String base=localRoot.getCanonicalPath()+java.io.File.separator;if(file.isFile()&&file.getCanonicalPath().startsWith(base))return Uri.fromFile(file);}catch(Exception ignored){}return null;}
         String[] segments=s.split("/");
         String parent=rootId; String prefix="";
         for(int i=0;i<segments.length;i++) {
