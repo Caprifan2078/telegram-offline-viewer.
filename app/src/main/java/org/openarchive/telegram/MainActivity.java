@@ -157,6 +157,7 @@ public class MainActivity extends Activity {
         sideMenuItem(pane,"★  Избранное","Заметки и сохранённые сообщения",()->{home=false;screen="saved";renderSaved();dialog.dismiss();});
         sideMenuItem(pane,"＋  Импортировать чат","Папка Telegram, ZIP или RAR",()->{dialog.dismiss();chooseFolder();});
         sideMenuItem(pane,"⇧  Экспортировать чаты","Резервная копия сообщений и настроек",()->{dialog.dismiss();backupPicker();});
+        sideMenuItem(pane,"✓  Проверить резервную копию","Проверка целостности без восстановления",()->{dialog.dismiss();verifyBackupPicker();});
         sideMenuItem(pane,"⇩  Восстановить архив","Импорт резервной копии приложения",()->{dialog.dismiss();restorePicker();});
         sideMenuItem(pane,"⚙  Настройки","Имя, цвета участников и другое",()->{dialog.dismiss();settingsMenu();});
         View gap=new View(this);pane.addView(gap,new LinearLayout.LayoutParams(1,0,1));
@@ -592,6 +593,7 @@ public class MainActivity extends Activity {
     @Override public void onBackPressed(){if(screen.equals("saved")||(!home&&returnScreen.isEmpty())){saveReadingProgress();home=true;screen="chat";bottomNav.setVisibility(View.VISIBLE);showPage();return;}if(!returnScreen.isEmpty()){restoreReturn();return;}super.onBackPressed();}
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
+        if(request==43&&result==RESULT_OK&&data!=null&&data.getData()!=null){verifyBackup(data.getData());return;}
         if((request==41||request==42)&&result==RESULT_OK&&data!=null&&data.getData()!=null){
             if(request==42)askRestorePassword(data.getData());else backupAction(data.getData(),false);return;
         }
@@ -1395,6 +1397,37 @@ public class MainActivity extends Activity {
         i.setType("application/octet-stream");i.addCategory(Intent.CATEGORY_OPENABLE);
         i.putExtra(Intent.EXTRA_TITLE,"TelegramArchive-"+(fullBackupMode?"FULL":"COMPACT")+(backupPassword==null?".zip":".tgar"));
         startActivityForResult(i,41);
+    }
+    private void verifyBackupPicker(){
+        Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.setType("*/*");intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivityForResult(intent,43);
+    }
+    private void verifyBackup(Uri uri){
+        try{
+            if(SecureArchive.isEncrypted(this,uri)){
+                EditText entry=new EditText(this);entry.setInputType(129);entry.setSingleLine(true);
+                entry.setHint("Пароль для проверки архива");
+                new AlertDialog.Builder(this).setTitle("Проверка защищённой копии")
+                    .setView(entry).setNegativeButton("Отмена",null)
+                    .setPositiveButton("Проверить",(d,w)->runBackupVerify(uri,entry.getText().toString().toCharArray())).show();
+            }else runBackupVerify(uri,null);
+        }catch(Exception problem){status.setText("Невозможно открыть копию: "+problem.getMessage());}
+    }
+    private void runBackupVerify(Uri uri,char[] password){
+        if(importing||restoringBackup)return;restoringBackup=true;
+        status.setText("Проверяю резервную копию, чаты не изменяются…");
+        worker.execute(()->{
+            try{
+                BackupVerifier.Result result=BackupVerifier.verify(this,uri,password,msg->runOnUiThread(()->status.setText(msg)));
+                runOnUiThread(()->{restoringBackup=false;
+                    new AlertDialog.Builder(this).setTitle("Проверка завершена")
+                        .setMessage("ZIP прочитан и контрольные суммы проверены. Файлов: "+result.files+". Распаковано при проверке: "+(result.bytes/1048576)+" МБ. Существующие переписки не изменялись. Полное восстановление на другом устройстве этим тестом не подтверждается.")
+                        .setPositiveButton("Готово",null).show();
+                });
+            }catch(Exception error){runOnUiThread(()->{restoringBackup=false;status.setText("Проверка не пройдена: "+error.getMessage());});}
+            finally{if(password!=null)java.util.Arrays.fill(password,(char)0);}
+        });
     }
     private void restorePicker(){
         new AlertDialog.Builder(this).setTitle("Восстановить переписки")
