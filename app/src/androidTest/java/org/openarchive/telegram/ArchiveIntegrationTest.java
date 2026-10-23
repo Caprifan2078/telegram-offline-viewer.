@@ -83,6 +83,13 @@ public class ArchiveIntegrationTest {
                 "<div class='from_name'>Тест</div><div class='text'>Сохранить</div>"+
                 "<a href='photos/sample.jpg'>Photo</a></div></div></div>");
         }
+        android.graphics.Bitmap generated=android.graphics.Bitmap.createBitmap(16,16,android.graphics.Bitmap.Config.ARGB_8888);
+        generated.eraseColor(android.graphics.Color.CYAN);
+        File originalAvatar=new File(folder,"avatar-input.jpg");
+        try(FileOutputStream avatarOut=new FileOutputStream(originalAvatar)){generated.compress(android.graphics.Bitmap.CompressFormat.JPEG,85,avatarOut);}
+        generated.recycle();
+        String customName=PersonalImages.save(ctx,android.net.Uri.fromFile(originalAvatar),key);
+        String avatarKey=PersonalImages.avatarKey(key,"Тест");
         MessageDb old=new MessageDb(ctx,key);
         File backup=new File(ctx.getCacheDir(),"integration-"+key+".zip");
         String restoredKey=null;
@@ -94,7 +101,8 @@ public class ArchiveIntegrationTest {
             JSONArray registry=new JSONArray();
             JSONObject chat=new JSONObject();chat.put("key",key);chat.put("name","Тестовый чат");chat.put("tree","local:"+folder.getAbsolutePath());
             registry.put(chat);
-            assertTrue(prefs.edit().putString("archive_registry",registry.toString()).commit());
+            assertTrue(prefs.edit().putString("archive_registry",registry.toString())
+                .putString(avatarKey,customName).commit());
             long started=SystemClock.elapsedRealtimeNanos();
             try(FileOutputStream out=new FileOutputStream(backup)){FullBackup.export(ctx,prefs,out,msg->{});}
             long exportMs=(SystemClock.elapsedRealtimeNanos()-started)/1000000L;
@@ -108,6 +116,8 @@ public class ArchiveIntegrationTest {
             assertEquals(2,restored.length());
             JSONObject entry=restored.getJSONObject(1);
             restoredKey=entry.getString("key");
+            assertEquals(customName,prefs.getString(PersonalImages.avatarKey(restoredKey,"Тест"),""));
+            assertNotNull(PersonalImages.load(ctx,customName));
             MessageDb fresh=new MessageDb(ctx,restoredKey);
             try{
                 assertEquals(1,fresh.totalMessages());
@@ -129,6 +139,7 @@ public class ArchiveIntegrationTest {
             if(restoredKey!=null)ctx.deleteDatabase("telegram_"+restoredKey+".db");
             prefs.edit().clear().commit();
             ArchiveFileImport.deleteTree(folder);backup.delete();
+            new File(new File(ctx.getFilesDir(),"personal_images"),customName).delete();
         }
     }
 }
