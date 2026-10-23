@@ -81,7 +81,7 @@ public class MainActivity extends Activity {
     private static final int PICK_FOLDER=27,PAGE=40,MEDIA_PAGE=30;
     private int BG=0xff0b1424,PANEL=0xff18283e,INCOMING=0xff29405b,OUTGOING=0xff1a6159,
             FG=0xfff5f9ff,SUB=0xffafc1d4,ACCENT=0xff7ad2ff,CHIP=0xff29465f,HIGHLIGHT=0xff326e8f;
-    private int themeIndex=0, densityIndex=1,wallpaperIndex=0,wallpaperOpacity=28;private boolean reduceMotion=false;
+    private int themeIndex=0, densityIndex=1,wallpaperIndex=0,wallpaperOpacity=28,bubbleRadius=17;private boolean reduceMotion=false;
     private static final String[] MEDIA_KEYS={"all","round","voice","image","video","audio","file","gif","sticker"};
     private static final String[] MEDIA_LABELS={"Всё","Видеосообщения","Голосовые","Фото","Видео","Музыка","Файлы","GIF","Стикеры"};
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
@@ -137,6 +137,7 @@ public class MainActivity extends Activity {
         SharedPreferences prefs=getPreferences(MODE_PRIVATE);
         themeIndex=prefs.getInt("appearance_theme",0);
         densityIndex=prefs.getInt("appearance_density",1);
+        bubbleRadius=prefs.getInt("appearance_bubble_radius",17);
         wallpaperIndex=prefs.getInt("appearance_wallpaper",0);
         wallpaperOpacity=prefs.getInt("appearance_wallpaper_alpha",28);
         reduceMotion=prefs.getBoolean("appearance_less_motion",false);
@@ -168,9 +169,10 @@ public class MainActivity extends Activity {
             .setPositiveButton("Готово",null).show();
     }
     private void wallpaperDialog(){
-        String[] choices={"Океанские линии","Тёплое сияние","Нефритовые волны","Геометрия"};
+        String[] choices={"Океанские линии","Тёплое сияние","Нефритовые волны","Геометрия","Своя фотография"};
         new AlertDialog.Builder(this).setTitle("Фон переписки")
             .setSingleChoiceItems(choices,wallpaperIndex,(dialog,idx)->{
+                if(idx==4){dialog.dismiss();pickPersonalImage(60);return;}
                 getPreferences(MODE_PRIVATE).edit().putInt("appearance_wallpaper",idx).apply();
                 wallpaperIndex=idx;dialog.dismiss();opacityDialog();
             }).setNeutralButton("Прозрачность",(d,w)->opacityDialog()).setPositiveButton("Готово",null).show();
@@ -184,6 +186,56 @@ public class MainActivity extends Activity {
                     .putInt("appearance_wallpaper_alpha",slider.getProgress()).apply();
                 wallpaperOpacity=slider.getProgress();showPage();
             }).setNegativeButton("Отмена",null).show();
+    }
+    private void bubbleStyleDialog(){
+        SeekBar radius=new SeekBar(this);radius.setMax(27);radius.setProgress(bubbleRadius);
+        radius.setPadding(px(25),px(15),px(25),px(15));
+        new AlertDialog.Builder(this).setTitle("Скругление сообщений")
+            .setMessage("Слева — строгие прямоугольники, справа — плавные пузырьки.")
+            .setView(radius).setNegativeButton("Отмена",null)
+            .setPositiveButton("Применить",(d,w)->{
+                getPreferences(MODE_PRIVATE).edit().putInt("appearance_bubble_radius",radius.getProgress()).apply();
+                bubbleRadius=radius.getProgress();showPage();
+            }).show();
+    }
+    private void pickPersonalImage(int request){
+        Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.setType("image/*");i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivityForResult(i,request);
+    }
+    private void avatarSelection(){
+        if(home){pickPersonalImage(62);return;}
+        worker.execute(()->{
+            List<String> authors=db.participants();
+            runOnUiThread(()->{
+                String[] names=authors.toArray(new String[0]);boolean[] selected=new boolean[names.length];
+                new AlertDialog.Builder(this).setTitle("Аватары участников")
+                    .setMultiChoiceItems(names,selected,(d,i,enabled)->selected[i]=enabled)
+                    .setNegativeButton("Отмена",null).setNeutralButton("Аватар чата",(d,w)->pickPersonalImage(62))
+                    .setPositiveButton("Выбрать фото",(d,w)->{
+                        ArrayList<String> chosen=new ArrayList<>();
+                        for(int i=0;i<selected.length;i++)if(selected[i])chosen.add(names[i]);
+                        if(chosen.isEmpty()){toast("Выбери хотя бы одного участника");return;}
+                        pendingAvatarUsers=chosen;pickPersonalImage(61);
+                    }).show();
+            });
+        });
+    }
+    private ArrayList<String> pendingAvatarUsers=new ArrayList<>();
+    private void applyPersonalImage(Uri uri,int request){
+        ArrayList<String> chosen=new ArrayList<>(pendingAvatarUsers);
+        worker.execute(()->{
+            try{
+                String filename=PersonalImages.save(this,uri,UUID.randomUUID().toString().replace("-",""));
+                SharedPreferences.Editor editor=getPreferences(MODE_PRIVATE).edit();
+                if(request==60)editor.putString(PersonalImages.wallpaperKey(activeKey),filename);
+                else if(request==62)editor.putString(PersonalImages.chatAvatarKey(activeKey),filename);
+                else for(String name:chosen)editor.putString(PersonalImages.avatarKey(activeKey,name),filename);
+                if(!editor.commit())throw new IOException("Не удалось сохранить настройки");
+                runOnUiThread(()->{pendingAvatarUsers.clear();showPage();toast("Изображение сохранено локально");});
+            }catch(Exception error){runOnUiThread(()->toast("Не удалось сохранить фото: "+error.getMessage()));}
+        });
     }
     private void densityDialog(){
         String[] options={"Компактно","Обычно","Просторно"};
@@ -234,11 +286,12 @@ public class MainActivity extends Activity {
         sideMenuItem(menuItems,"◈  Пробное восстановление","Тест баз и медиа без изменения чатов",()->{dialog.dismiss();dryRunPicker();});
         sideMenuItem(menuItems,"✓  Проверить резервную копию","Проверка целостности без восстановления",()->{dialog.dismiss();verifyBackupPicker();});
         sideMenuItem(menuItems,"⇩  Восстановить архив","Импорт резервной копии приложения",()->{dialog.dismiss();restorePicker();});
+        sideMenuItem(menuItems,"◉  Аватары","Один аватар нескольким участникам",()->{dialog.dismiss();avatarSelection();});
         sideMenuItem(menuItems,"◐  Внешний вид","Океан, графит, светлая · плотность",()->{dialog.dismiss();appearanceDialog();});
         sideMenuItem(menuItems,"▧  Фон переписки","Узоры и прозрачность",()->{dialog.dismiss();wallpaperDialog();});
         sideMenuItem(menuItems,"⚙  Настройки","Имя, цвета участников и другое",()->{dialog.dismiss();settingsMenu();});
 
-        TextView label=text("Telegram Archive  ·  v"+"0.24-beta"+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
+        TextView label=text("Telegram Archive  ·  v"+"0.25-beta"+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
         label.setPadding(px(4),px(16),0,px(12));pane.addView(label);
         overlay.setOnClickListener(v->dialog.dismiss());pane.setOnClickListener(v->{});
         dialog.setContentView(overlay);dialog.show();Window w=dialog.getWindow();if(w!=null)w.setLayout(-1,-1);
@@ -677,6 +730,7 @@ public class MainActivity extends Activity {
     @Override public void onBackPressed(){if(screen.equals("saved")||(!home&&returnScreen.isEmpty())){saveReadingProgress();home=true;screen="chat";bottomNav.setVisibility(View.VISIBLE);showPage();return;}if(!returnScreen.isEmpty()){restoreReturn();return;}super.onBackPressed();}
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
+        if((request==60||request==61||request==62)&&result==RESULT_OK&&data!=null&&data.getData()!=null){applyPersonalImage(data.getData(),request);return;}
         if(request==44&&result==RESULT_OK&&data!=null&&data.getData()!=null){dryRunSelected(data.getData());return;}
         if(request==43&&result==RESULT_OK&&data!=null&&data.getData()!=null){verifyBackup(data.getData());return;}
         if((request==41||request==42)&&result==RESULT_OK&&data!=null&&data.getData()!=null){
@@ -775,7 +829,10 @@ public class MainActivity extends Activity {
                 runOnUiThread(()->{
                     if(isFinishing()||token!=loadToken)return;
                     total=count;setOffset(pos);list.removeAllViews();
-                    if("chat".equals(tab))list.setBackground(new ChatWallpaper(wallpaperIndex,wallpaperOpacity/100f,themeIndex==2));
+                    if("chat".equals(tab)){
+                        android.graphics.drawable.Drawable custom=PersonalImages.wallpaper(this,getPreferences(MODE_PRIVATE),activeKey,BG);
+                        list.setBackground(custom!=null?custom:new ChatWallpaper(wallpaperIndex,wallpaperOpacity/100f,themeIndex==2));
+                    }
                     else list.setBackgroundColor(BG);
                     if(gallery)renderMedia(attachments);else renderMessages(messages,links,find);
                     animateEntrance();
@@ -832,11 +889,13 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams linep=p(-1,-2);linep.setMargins(px(2),px(1),px(2),px(densityIndex==0?2:densityIndex==2?8:4));list.addView(line,linep);
             if(!own){TextView avatar=text(initial(m.author),14,FG);avatar.setTypeface(null,Typeface.BOLD);
                 avatar.setGravity(Gravity.CENTER);avatar.setBackground(shape(authorColor(m.author),100));
+                Bitmap portrait=PersonalImages.load(this,getPreferences(MODE_PRIVATE).getString(PersonalImages.avatarKey(activeKey,m.author),""));
+                if(portrait!=null){avatar.setText("");avatar.setBackground(new android.graphics.drawable.BitmapDrawable(getResources(),PersonalImages.circular(portrait,px(32))));}
                 LinearLayout.LayoutParams ap=p(32,32);ap.rightMargin=px(7);line.addView(avatar,ap);}
             LinearLayout bubble=column();bubble.setPadding(px(bubbleInset()),px(densityIndex==0?3:densityIndex==2?10:6),px(bubbleInset()),px(densityIndex==0?3:densityIndex==2?11:7));
             int chosenColor=authorColor(m.author);
             bubble.setBackground(gradient(m.id==highlightId?HIGHLIGHT:chosenColor,
-                    m.id==highlightId?HIGHLIGHT:darken(chosenColor),17));
+                    m.id==highlightId?HIGHLIGHT:darken(chosenColor),bubbleRadius));
             if(m.id==highlightId){glowBubble=bubble;glowBase=chosenColor;glowId=m.id;line.setBackground(shape(0x443ad0fc,12));}
             LinearLayout.LayoutParams bp=p(-2,-2);line.addView(bubble,bp);
             int maxWidth=getResources().getDisplayMetrics().widthPixels-px(93);
@@ -1483,9 +1542,9 @@ public class MainActivity extends Activity {
         });
     }
     private void settingsMenu(){new AlertDialog.Builder(this).setTitle("Настройки").setItems(
-       new String[]{"Внешний вид и темы","Фон переписки","Моё имя (сообщения справа)","Цвета участников","Объединить цвета нескольких имён","Мои архивы","Создать резервную копию","Восстановить резервную копию"},(d,i)->{
-          if(i==0)appearanceDialog();else if(i==1)wallpaperDialog();else if(i==2)identityDialog();else if(i==3)participantSettings();else if(i==4)groupedParticipantColors();else if(i==5)chatPicker();
-          else if(i==6)backupPicker();else restorePicker();
+       new String[]{"Внешний вид и темы","Фон переписки","Аватары участников","Скругление пузырьков","Моё имя (сообщения справа)","Цвета участников","Объединить цвета нескольких имён","Мои архивы","Создать резервную копию","Восстановить резервную копию"},(d,i)->{
+          if(i==0)appearanceDialog();else if(i==1)wallpaperDialog();else if(i==2)avatarSelection();else if(i==3)bubbleStyleDialog();else if(i==4)identityDialog();else if(i==5)participantSettings();else if(i==6)groupedParticipantColors();else if(i==7)chatPicker();
+          else if(i==8)backupPicker();else restorePicker();
        }).show();}
     private String displayDocumentName(Uri uri){
         try(android.database.Cursor c=getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null)){
