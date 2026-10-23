@@ -204,8 +204,21 @@ public class MainActivity extends Activity {
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         startActivityForResult(i,request);
     }
+    private String pendingImageChatKey="";
     private void avatarSelection(){
-        if(home){pickPersonalImage(62);return;}
+        if(home){
+            ArrayList<String> names=new ArrayList<>();ArrayList<String> keys=new ArrayList<>();
+            for(int n=0;n<archives.length();n++){
+                JSONObject chat=archives.optJSONObject(n);
+                if(chat!=null){names.add(chat.optString("name","Чат"));keys.add(chat.optString("key"));}
+            }
+            if(keys.isEmpty()){toast("Сначала добавь переписку");return;}
+            new AlertDialog.Builder(this).setTitle("Аватар чата / группы")
+                .setItems(names.toArray(new String[0]),(dialog,index)->{
+                    pendingImageChatKey=keys.get(index);pickPersonalImage(62);
+                }).show();
+            return;
+        }
         worker.execute(()->{
             List<String> authors=db.participants();
             runOnUiThread(()->{
@@ -225,15 +238,16 @@ public class MainActivity extends Activity {
     private ArrayList<String> pendingAvatarUsers=new ArrayList<>();
     private void applyPersonalImage(Uri uri,int request){
         ArrayList<String> chosen=new ArrayList<>(pendingAvatarUsers);
+        String targetChat=pendingImageChatKey.isEmpty()?activeKey:pendingImageChatKey;
         worker.execute(()->{
             try{
                 String filename=PersonalImages.save(this,uri,UUID.randomUUID().toString().replace("-",""));
                 SharedPreferences.Editor editor=getPreferences(MODE_PRIVATE).edit();
                 if(request==60)editor.putString(PersonalImages.wallpaperKey(activeKey),filename);
-                else if(request==62)editor.putString(PersonalImages.chatAvatarKey(activeKey),filename);
+                else if(request==62)editor.putString(PersonalImages.chatAvatarKey(targetChat),filename);
                 else for(String name:chosen)editor.putString(PersonalImages.avatarKey(activeKey,name),filename);
                 if(!editor.commit())throw new IOException("Не удалось сохранить настройки");
-                runOnUiThread(()->{pendingAvatarUsers.clear();showPage();toast("Изображение сохранено локально");});
+                runOnUiThread(()->{pendingAvatarUsers.clear();pendingImageChatKey="";showPage();toast("Изображение сохранено локально");});
             }catch(Exception error){runOnUiThread(()->toast("Не удалось сохранить фото: "+error.getMessage()));}
         });
     }
