@@ -18,11 +18,11 @@ public class UiSmokeTest {
     @Test public void opensHomeAndDrawer(){
         onView(withText("Мои переписки")).check(matches(isDisplayed()));
         onView(withText("☰")).perform(ViewActions.click());
-        onView(withText("▧  Фон переписки")).check(matches(isDisplayed()));
+        onView(withText("▧  Фон переписки")).perform(ViewActions.scrollTo()).check(matches(isDisplayed()));
     }
     @Test public void opensWallpaperAndSettings(){
         onView(withText("☰")).perform(ViewActions.click());
-        onView(withText("▧  Фон переписки")).perform(ViewActions.click());
+        onView(withText("▧  Фон переписки")).perform(ViewActions.scrollTo(),ViewActions.click());
         onView(withText("Фон переписки")).check(matches(isDisplayed()));
     }
 }
