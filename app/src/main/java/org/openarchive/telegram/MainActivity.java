@@ -101,7 +101,7 @@ public class MainActivity extends Activity {
     private String screen="chat",mediaKind="all",q="",byAuthor="",mine="",returnScreen="";
     private boolean deep=false,onlyMedia=false,importing=false;
     private int chatOffset=0,searchOffset=0,mediaOffset=0,favOffset=0,total=0,loadToken=0;
-    private long highlightId=-1;private long lastVisibleMessage=-1;private int lastVisibleTop=0;private final Map<Long,View> renderedMessageViews=new HashMap<>();private long pendingRestoreId=-1;private int pendingRestoreTop=0;private boolean restoringBackup=false;private boolean fullBackupMode=true;
+    private long highlightId=-1;private long lastVisibleMessage=-1;private int lastVisibleTop=0;private final Map<Long,View> renderedMessageViews=new HashMap<>();private long pendingRestoreId=-1;private int pendingRestoreTop=0;private boolean restoringBackup=false;private boolean fullBackupMode=true;private char[] backupPassword=null;
     private String info="";
     private MediaPlayer player;private String playingPath="";private TextureView activeTexture;
     private Runnable progressUpdater;private MessageDb.Attachment playingAttachment;private LinearLayout playerStrip;private TextView playerText;private Button playerPause;private FrameLayout inlineHolder;private int floatingStart=0;
@@ -158,7 +158,7 @@ public class MainActivity extends Activity {
         sideMenuItem(pane,"⇩  Восстановить архив","Импорт резервной копии приложения",()->{dialog.dismiss();restorePicker();});
         sideMenuItem(pane,"⚙  Настройки","Имя, цвета участников и другое",()->{dialog.dismiss();settingsMenu();});
         View gap=new View(this);pane.addView(gap,new LinearLayout.LayoutParams(1,0,1));
-        TextView label=text("Telegram Archive  ·  v"+"0.18-beta"+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
+        TextView label=text("Telegram Archive  ·  v"+"0.19-beta"+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
         label.setPadding(px(4),px(16),0,px(12));pane.addView(label);
         overlay.setOnClickListener(v->dialog.dismiss());pane.setOnClickListener(v->{});
         dialog.setContentView(overlay);dialog.show();Window w=dialog.getWindow();if(w!=null)w.setLayout(-1,-1);
@@ -591,7 +591,7 @@ public class MainActivity extends Activity {
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
         if((request==41||request==42)&&result==RESULT_OK&&data!=null&&data.getData()!=null){
-            backupAction(data.getData(),request==42);return;
+            if(request==42)askRestorePassword(data.getData());else backupAction(data.getData(),false);return;
         }
         if(request==28&&result==RESULT_OK&&data!=null&&data.getData()!=null){
             Uri uri=data.getData();
@@ -1368,54 +1368,97 @@ public class MainActivity extends Activity {
           else if(i==4)backupPicker();else restorePicker();
        }).show();}
     private void backupPicker(){
-        new AlertDialog.Builder(this).setTitle("Экспорт переписок")
-            .setMessage("Полный архив сохраняет исходные HTML, фото, видео, видеосообщения, голосовые, файлы, избранное, закрепления и заметки. Большой ZIP может занять более 9 ГБ. Он не зашифрован: храни его в защищённом месте.")
-            .setItems(new String[]{"Полный архив: чаты + все исходные медиа","Компактная копия: переписки, избранное и настройки"},
-                (dialog,choice)->{
-                    fullBackupMode=choice==0;
-                    Intent pick=new Intent(Intent.ACTION_CREATE_DOCUMENT);
-                    pick.setType("application/zip");pick.addCategory(Intent.CATEGORY_OPENABLE);
-                    pick.putExtra(Intent.EXTRA_TITLE, "TelegramArchive-"+(fullBackupMode?"FULL":"METADATA")+".zip");
-                    startActivityForResult(pick,41);
-                }).show();
+        new AlertDialog.Builder(this).setTitle("Создать резервную копию")
+            .setMessage("Выбери тип архива. Файл сохранится в папку, которую ты укажешь в системном окне Android. После записи можно проверить контрольные суммы. Не удаляй исходные медиа, пока проверка не завершится.")
+            .setItems(new String[]{"Полная копия · чаты и все медиа","Компактная копия · чаты и настройки"},(dlg,choice)->{
+                fullBackupMode=choice==0;askBackupPassword();
+            }).show();
+    }
+    private void askBackupPassword(){
+        LinearLayout layout=column();layout.setPadding(px(23),px(5),px(23),px(3));
+        EditText pass=new EditText(this);pass.setHint("Пароль, не меньше 8 символов");pass.setSingleLine(true);
+        pass.setInputType(129);layout.addView(pass,p(-1,53));
+        TextView note=text("Можно оставить пустым, чтобы создать обычный ZIP без шифрования. Забытый пароль восстановить невозможно.",12,SUB);layout.addView(note);
+        new AlertDialog.Builder(this).setTitle("Защитить копию паролем").setView(layout)
+            .setNegativeButton("Отмена",null)
+            .setNeutralButton("Без пароля",(d,w)->{backupPassword=null;pickBackupFile();})
+            .setPositiveButton("С паролем",(d,w)->{
+                String value=pass.getText().toString();
+                if(value.length()<8){toast("Пароль должен содержать минимум 8 символов");return;}
+                backupPassword=value.toCharArray();pickBackupFile();
+            }).show();
+    }
+    private void pickBackupFile(){
+        Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        i.setType("application/octet-stream");i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.putExtra(Intent.EXTRA_TITLE,"TelegramArchive-"+(fullBackupMode?"FULL":"COMPACT")+(backupPassword==null?".zip":".tgar"));
+        startActivityForResult(i,41);
     }
     private void restorePicker(){
         new AlertDialog.Builder(this).setTitle("Восстановить переписки")
-            .setMessage("Выбери ранее сохранённый архив приложения. Полный ZIP восстановит также фото, видео, кружочки и файлы. Старые переписки не заменяются.")
-            .setNegativeButton("Отмена",null).setPositiveButton("Выбрать ZIP",(d,w)->{
-                Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                intent.setType("application/zip");intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivityForResult(intent,42);
+            .setMessage("Сначала приложение проверит целостность архива. Существующие чаты останутся на месте. Для защищённой копии потребуется пароль.")
+            .setNegativeButton("Отмена",null).setPositiveButton("Выбрать копию",(d,w)->{
+                Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("*/*");
+                i.addCategory(Intent.CATEGORY_OPENABLE);i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                startActivityForResult(i,42);
             }).show();
+    }
+    private void askRestorePassword(Uri uri){
+        try{
+            if(!SecureArchive.isEncrypted(this,uri)){backupAction(uri,true);return;}
+            EditText entry=new EditText(this);entry.setHint("Пароль резервной копии");
+            entry.setInputType(129);entry.setSingleLine(true);
+            new AlertDialog.Builder(this).setTitle("Зашифрованная копия")
+                .setMessage("Введите пароль, чтобы проверить и восстановить данные")
+                .setView(entry).setNegativeButton("Отмена",null)
+                .setPositiveButton("Продолжить",(d,w)->{
+                    backupPassword=entry.getText().toString().toCharArray();
+                    backupAction(uri,true);
+                }).show();
+        }catch(Exception error){status.setText("Не удалось прочитать архив: "+error.getMessage());}
     }
     private void backupAction(Uri uri,boolean restore){
         if(restoringBackup||importing)return;
-        restoringBackup=true;status.setText(restore?"Восстанавливаю…":"Создаю резервную копию…");
+        final char[] password=backupPassword;
+        backupPassword=null;restoringBackup=true;
+        status.setText(restore?"Проверяю архив перед восстановлением…":"Создаю архив в выбранном расположении…");
         worker.execute(()->{
             try{
                 SharedPreferences prefs=getPreferences(MODE_PRIVATE);
                 if(restore){
-                    int count;
-                    // Distinguish formats using the prefix of ZIP entries, not the file name.
-                    boolean full=false;
-                    try(InputStream input=getContentResolver().openInputStream(uri);
-                        java.util.zip.ZipInputStream stream=new java.util.zip.ZipInputStream(new java.io.BufferedInputStream(input))){
-                        java.util.zip.ZipEntry first=stream.getNextEntry();
-                        full=first!=null&&first.getName().equals("metadata.zip");
+                    BackupVerifier.Result verified=BackupVerifier.verify(this,uri,password,msg->runOnUiThread(()->status.setText(msg)));
+                    int restored;
+                    try(InputStream source=SecureArchive.openInput(this,uri,password)){
+                        java.io.BufferedInputStream buf=new java.io.BufferedInputStream(source,128*1024);
+                        buf.mark(256);
+                        java.util.zip.ZipInputStream peek=new java.util.zip.ZipInputStream(buf);
+                        java.util.zip.ZipEntry first=peek.getNextEntry();
+                        boolean full=first!=null&&"metadata.zip".equals(first.getName());
                     }
-                    if(full)count=FullBackup.restore(this,prefs,uri,msg->runOnUiThread(()->status.setText(msg)));
-                    else count=ArchiveBackup.restore(this,prefs,uri,msg->runOnUiThread(()->status.setText(msg)));
-                    final int restored=count;
-                    runOnUiThread(()->{restoringBackup=false;loadArchiveRegistry();home=true;screen="chat";showPage();toast("Восстановлено чатов: "+restored);});
+                    try(InputStream source=SecureArchive.openInput(this,uri,password)){
+                        java.io.BufferedInputStream buffered=new java.io.BufferedInputStream(source,128*1024);
+                        buffered.mark(256);
+                        java.util.zip.ZipInputStream preview=new java.util.zip.ZipInputStream(buffered);
+                        java.util.zip.ZipEntry entry=preview.getNextEntry();
+                        boolean full=entry!=null&&"metadata.zip".equals(entry.getName());
+                        buffered.reset();
+                        if(full)restored=FullBackup.restore(this,prefs,buffered,msg->runOnUiThread(()->status.setText(msg)));
+                        else restored=ArchiveBackup.restore(this,prefs,buffered,msg->runOnUiThread(()->status.setText(msg)));
+                    }
+                    final int count=restored;
+                    runOnUiThread(()->{restoringBackup=false;loadArchiveRegistry();home=true;screen="chat";showPage();toast("Проверено и восстановлено чатов: "+count);});
                 }else{
-                    // UI position is saved by the existing navigation handler; SQL backup is checkpointed before export.
-                    if(fullBackupMode)FullBackup.export(this,prefs,uri,msg->runOnUiThread(()->status.setText(msg)));
-                    else ArchiveBackup.write(this,prefs,uri,msg->runOnUiThread(()->status.setText(msg)));
-                    runOnUiThread(()->{restoringBackup=false;toast("Резервная копия создана");});
+                    try(OutputStream raw=getContentResolver().openOutputStream(uri,"w")){
+                        if(raw==null)throw new IOException("Нет доступа к месту сохранения");
+                        OutputStream dest=password==null?raw:SecureArchive.encryptedOutput(raw,password);
+                        if(fullBackupMode)FullBackup.export(this,prefs,dest,msg->runOnUiThread(()->status.setText(msg)));
+                        else ArchiveBackup.write(this,prefs,dest,msg->runOnUiThread(()->status.setText(msg)));
+                    }
+                    runOnUiThread(()->{restoringBackup=false;status.setText("Архив сохранён в выбранной тобой папке. Проверь копию перед удалением исходников.");toast("Экспорт завершён");});
                 }
-            }catch(Exception e){
-                runOnUiThread(()->{restoringBackup=false;status.setText("Ошибка резервной копии: "+e.getMessage());});
-            }
+            }catch(Exception error){
+                runOnUiThread(()->{restoringBackup=false;status.setText("Ошибка: "+error.getMessage());});
+            }finally{if(password!=null)java.util.Arrays.fill(password,'\0');}
         });
     }
     private final class VerticalTimeline extends View {
