@@ -1,7 +1,7 @@
-name: Build Telegram Archive v0.11 APK
+name: Build Telegram Archive v0.12 APK
 on:
   push:
-    branches: [main, feat/v011-search-count-performance]
+    branches: [main, feat/v012-seamless-search-player-progress]
   workflow_dispatch:
 permissions:
   contents: read
