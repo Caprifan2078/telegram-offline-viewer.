@@ -121,12 +121,17 @@ final class ArchiveBackup {
         if(!temp.renameTo(dst)){temp.delete();throw new IOException("Не удалось сохранить базу переписки");}
     }
     static int restore(Context ctx,SharedPreferences prefs,Uri source,Progress progress) throws Exception{
+        try(InputStream in=ctx.getContentResolver().openInputStream(source)){
+            if(in==null)throw new IOException("Архив недоступен");
+            return restore(ctx,prefs,in,progress);
+        }
+    }
+    static int restore(Context ctx,SharedPreferences prefs,InputStream streamed,Progress progress)throws Exception{
         File cache=ctx.getCacheDir();Map<String,File> files=new HashMap<>();Map<String,String> hashes=new HashMap<>();
         JSONObject manifest=null;ArrayList<File> created=new ArrayList<>();
         try{
-            try(InputStream input=ctx.getContentResolver().openInputStream(source)){
-                if(input==null)throw new IOException("Файл резервной копии недоступен");
-                try(ZipInputStream zip=new ZipInputStream(new BufferedInputStream(input))){
+            {
+                try(ZipInputStream zip=new ZipInputStream(new BufferedInputStream(streamed))){
                     ZipEntry entry;int entries=0;
                     while((entry=zip.getNextEntry())!=null){
                         if(++entries>3000)throw new IOException("Слишком много файлов в архиве");
