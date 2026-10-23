@@ -81,7 +81,7 @@ public class MainActivity extends Activity {
     private static final int PICK_FOLDER=27,PAGE=40,MEDIA_PAGE=30;
     private int BG=0xff0b1424,PANEL=0xff18283e,INCOMING=0xff29405b,OUTGOING=0xff1a6159,
             FG=0xfff5f9ff,SUB=0xffafc1d4,ACCENT=0xff7ad2ff,CHIP=0xff29465f,HIGHLIGHT=0xff326e8f;
-    private int themeIndex=0, densityIndex=1;private boolean reduceMotion=false;
+    private int themeIndex=0, densityIndex=1,wallpaperIndex=0,wallpaperOpacity=28;private boolean reduceMotion=false;
     private static final String[] MEDIA_KEYS={"all","round","voice","image","video","audio","file","gif","sticker"};
     private static final String[] MEDIA_LABELS={"Всё","Видеосообщения","Голосовые","Фото","Видео","Музыка","Файлы","GIF","Стикеры"};
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
@@ -137,6 +137,8 @@ public class MainActivity extends Activity {
         SharedPreferences prefs=getPreferences(MODE_PRIVATE);
         themeIndex=prefs.getInt("appearance_theme",0);
         densityIndex=prefs.getInt("appearance_density",1);
+        wallpaperIndex=prefs.getInt("appearance_wallpaper",0);
+        wallpaperOpacity=prefs.getInt("appearance_wallpaper_alpha",28);
         reduceMotion=prefs.getBoolean("appearance_less_motion",false);
         if(themeIndex==1){ // Dark graphite
             BG=0xff101216;PANEL=0xff23262d;INCOMING=0xff30343d;OUTGOING=0xff33544e;
@@ -164,6 +166,24 @@ public class MainActivity extends Activity {
             })
             .setNeutralButton("Плотность сообщений",(dialog,button)->densityDialog())
             .setPositiveButton("Готово",null).show();
+    }
+    private void wallpaperDialog(){
+        String[] choices={"Океанские линии","Тёплое сияние","Нефритовые волны","Геометрия"};
+        new AlertDialog.Builder(this).setTitle("Фон переписки")
+            .setSingleChoiceItems(choices,wallpaperIndex,(dialog,idx)->{
+                getPreferences(MODE_PRIVATE).edit().putInt("appearance_wallpaper",idx).apply();
+                wallpaperIndex=idx;dialog.dismiss();opacityDialog();
+            }).setNeutralButton("Прозрачность",(d,w)->opacityDialog()).setPositiveButton("Готово",null).show();
+    }
+    private void opacityDialog(){
+        android.widget.SeekBar slider=new android.widget.SeekBar(this);slider.setMax(100);
+        slider.setProgress(wallpaperOpacity);slider.setPadding(px(26),px(12),px(26),px(12));
+        new AlertDialog.Builder(this).setTitle("Интенсивность узора")
+            .setView(slider).setPositiveButton("Применить",(d,w)->{
+                getPreferences(MODE_PRIVATE).edit()
+                    .putInt("appearance_wallpaper_alpha",slider.getProgress()).apply();
+                wallpaperOpacity=slider.getProgress();showPage();
+            }).setNegativeButton("Отмена",null).show();
     }
     private void densityDialog(){
         String[] options={"Компактно","Обычно","Просторно"};
@@ -211,9 +231,10 @@ public class MainActivity extends Activity {
         sideMenuItem(pane,"✓  Проверить резервную копию","Проверка целостности без восстановления",()->{dialog.dismiss();verifyBackupPicker();});
         sideMenuItem(pane,"⇩  Восстановить архив","Импорт резервной копии приложения",()->{dialog.dismiss();restorePicker();});
         sideMenuItem(pane,"◐  Внешний вид","Океан, графит, светлая · плотность",()->{dialog.dismiss();appearanceDialog();});
+        sideMenuItem(pane,"▧  Фон переписки","Узоры и прозрачность",()->{dialog.dismiss();wallpaperDialog();});
         sideMenuItem(pane,"⚙  Настройки","Имя, цвета участников и другое",()->{dialog.dismiss();settingsMenu();});
         View gap=new View(this);pane.addView(gap,new LinearLayout.LayoutParams(1,0,1));
-        TextView label=text("Telegram Archive  ·  v"+"0.21-beta"+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
+        TextView label=text("Telegram Archive  ·  v"+"0.22-beta"+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
         label.setPadding(px(4),px(16),0,px(12));pane.addView(label);
         overlay.setOnClickListener(v->dialog.dismiss());pane.setOnClickListener(v->{});
         dialog.setContentView(overlay);dialog.show();Window w=dialog.getWindow();if(w!=null)w.setLayout(-1,-1);
@@ -233,6 +254,7 @@ public class MainActivity extends Activity {
         list.animate().alpha(1f).translationY(0).setDuration(motionDuration(270)).setInterpolator(new DecelerateInterpolator()).start();
     }
     private void renderHome(){
+        list.setBackgroundColor(BG);
         ++loadToken;list.removeAllViews();pinnedBar.removeAllViews();filterBar.removeAllViews();searchArea.removeAllViews();
         verticalTimeline.setVisibility(View.GONE);bottomPager.setVisibility(View.GONE);bottomNav.setVisibility(View.GONE);
         menuButton.setVisibility(View.VISIBLE);navBack.setVisibility(View.GONE);
@@ -278,6 +300,7 @@ public class MainActivity extends Activity {
         animateEntrance();scroll.post(()->scroll.scrollTo(0,0));
     }
     private void renderSaved(){
+        list.setBackgroundColor(BG);
         ++loadToken;home=false;screen="saved";list.removeAllViews();filterBar.removeAllViews();searchArea.removeAllViews();pinnedBar.removeAllViews();bottomNav.setVisibility(View.GONE);bottomPager.setVisibility(View.GONE);verticalTimeline.setVisibility(View.GONE);
         menuButton.setVisibility(View.GONE);navBack.setVisibility(View.VISIBLE);title.setText("★ Избранное");subtitle.setText("Локальные заметки и сохранённые сообщения");
         LinearLayout compose=row();list.addView(compose,p(-1,-2));
@@ -748,6 +771,8 @@ public class MainActivity extends Activity {
                 runOnUiThread(()->{
                     if(isFinishing()||token!=loadToken)return;
                     total=count;setOffset(pos);list.removeAllViews();
+                    if("chat".equals(tab))list.setBackground(new ChatWallpaper(wallpaperIndex,wallpaperOpacity/100f,themeIndex==2));
+                    else list.setBackgroundColor(BG);
                     if(gallery)renderMedia(attachments);else renderMessages(messages,links,find);
                     animateEntrance();
                     bottomPager.setVisibility(tab.equals("chat")||tab.equals("search")?View.GONE:View.VISIBLE);
@@ -1430,9 +1455,9 @@ public class MainActivity extends Activity {
         });
     }
     private void settingsMenu(){new AlertDialog.Builder(this).setTitle("Настройки").setItems(
-       new String[]{"Внешний вид и темы","Моё имя (сообщения справа)","Цвета участников","Объединить цвета нескольких имён","Мои архивы","Создать резервную копию","Восстановить резервную копию"},(d,i)->{
-          if(i==0)appearanceDialog();else if(i==1)identityDialog();else if(i==2)participantSettings();else if(i==3)groupedParticipantColors();else if(i==4)chatPicker();
-          else if(i==5)backupPicker();else restorePicker();
+       new String[]{"Внешний вид и темы","Фон переписки","Моё имя (сообщения справа)","Цвета участников","Объединить цвета нескольких имён","Мои архивы","Создать резервную копию","Восстановить резервную копию"},(d,i)->{
+          if(i==0)appearanceDialog();else if(i==1)wallpaperDialog();else if(i==2)identityDialog();else if(i==3)participantSettings();else if(i==4)groupedParticipantColors();else if(i==5)chatPicker();
+          else if(i==6)backupPicker();else restorePicker();
        }).show();}
     private String displayDocumentName(Uri uri){
         try(android.database.Cursor c=getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null)){
