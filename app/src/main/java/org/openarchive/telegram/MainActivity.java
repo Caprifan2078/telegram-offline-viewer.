@@ -191,9 +191,10 @@ public class MainActivity extends Activity {
                 String summary=current.body==null||current.body.trim().isEmpty()?"Медиафайл":current.body;
                 TextView snippet=text(clip(summary,78),13,FG);snippet.setSingleLine(true);info.addView(snippet);
                 info.setOnClickListener(v->jump(current.id,""));
+                final int nextIndex=(selected+1)%pins.size();
                 TextView next=text("⌄",27,FG);next.setGravity(Gravity.CENTER);
                 bar.addView(next,p(34,45));next.setOnClickListener(v->{
-                    pinnedFocus=pins.get((selected+1)%pins.size()).id;renderPinnedBar();
+                    pinnedFocus=pins.get(nextIndex).id;renderPinnedBar();
                 });
                 TextView unpin=text("✕",20,SUB);unpin.setGravity(Gravity.CENTER);bar.addView(unpin,p(32,45));
                 unpin.setOnClickListener(v->unpinMessage(current.id));
