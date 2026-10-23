@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.animation.ValueAnimator;
 import android.os.Build;
 import android.view.WindowInsets;
+import android.view.WindowManager;
 import android.graphics.Insets;
 import android.text.TextUtils;
 import android.view.animation.DecelerateInterpolator;
@@ -76,8 +77,8 @@ import java.util.concurrent.Executors;
 /** Offline Telegram-style archive. No INTERNET permission, no uploads or telemetry. */
 public class MainActivity extends Activity {
     private static final int PICK_FOLDER=27,PAGE=40,MEDIA_PAGE=30;
-    private static final int BG=0xff101928,PANEL=0xff182638,INCOMING=0xff233249,OUTGOING=0xff245a55,
-            FG=0xfff4f8ff,SUB=0xffaec0d1,ACCENT=0xff67c2f7,CHIP=0xff304a64,HIGHLIGHT=0xff366a87;
+    private static final int BG=0xff0b1424,PANEL=0xff18283e,INCOMING=0xff29405b,OUTGOING=0xff1a6159,
+            FG=0xfff5f9ff,SUB=0xffafc1d4,ACCENT=0xff7ad2ff,CHIP=0xff29465f,HIGHLIGHT=0xff326e8f;
     private static final String[] MEDIA_KEYS={"all","round","voice","image","video","audio","file","gif","sticker"};
     private static final String[] MEDIA_LABELS={"Всё","Видеосообщения","Голосовые","Фото","Видео","Музыка","Файлы","GIF","Стикеры"};
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
@@ -94,7 +95,7 @@ public class MainActivity extends Activity {
     private VerticalTimeline verticalTimeline;
     private final int[] participantColors={0xff315c79,0xff665184,0xff326c65,0xff75513f,0xff5d607f,0xff724d68,0xff52683a,0xff426884};
     private LinearLayout base,list,filterBar,bottomNav,searchArea,toolArea;
-    private ScrollView scroll;private TextView title,subtitle,status,pageLabel;private Button navBack;private Button addChatButton;private String lastRenderedDay="";
+    private ScrollView scroll;private TextView title,subtitle,status,pageLabel;private Button navBack,menuButton;private String lastRenderedDay="";
     private EditText searchInput,authorInput;private CheckBox mediaOnly;
     private Button backPage,nextPage,quickButton,deepButton,folderButton,backButton;
     private String screen="chat",mediaKind="all",q="",byAuthor="",mine="",returnScreen="";
@@ -120,7 +121,7 @@ public class MainActivity extends Activity {
         db=new MessageDb(this,activeKey);
         mine=getPreferences(MODE_PRIVATE).getString("mine","");
         String old=activeTree();
-        if(old!=null)try{folder=new DocumentFolder(getContentResolver(),Uri.parse(old));}catch(Exception ignored){}
+        if(old!=null)try{folder=old.startsWith("local:")?new DocumentFolder(getContentResolver(),new java.io.File(old.substring(6))):new DocumentFolder(getContentResolver(),Uri.parse(old));}catch(Exception ignored){}
         createUi();showPage();
     }
     private int px(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
@@ -130,13 +131,20 @@ public class MainActivity extends Activity {
     private LinearLayout column(){LinearLayout v=new LinearLayout(this);v.setOrientation(LinearLayout.VERTICAL);return v;}
     private LinearLayout row(){LinearLayout v=new LinearLayout(this);v.setOrientation(LinearLayout.HORIZONTAL);v.setGravity(Gravity.CENTER_VERTICAL);return v;}
     private LinearLayout.LayoutParams p(int w,int h){return new LinearLayout.LayoutParams(w<0?w:px(w),h<0?h:px(h));}
-    private Button btn(String s){Button b=new Button(this);b.setAllCaps(false);b.setText(s);b.setTextSize(12);b.setTextColor(FG);b.setPadding(px(8),0,px(8),0);b.setBackground(shape(PANEL,13));return b;}
+    private Button btn(String s){
+        Button b=new Button(this);b.setAllCaps(false);b.setText(s);b.setTextSize(12);
+        b.setTypeface(Typeface.DEFAULT,Typeface.BOLD);b.setTextColor(FG);
+        b.setPadding(px(9),0,px(9),0);b.setMinWidth(0);b.setMinHeight(0);
+        b.setElevation(0);b.setStateListAnimator(null);
+        b.setBackground(new RippleDrawable(ColorStateList.valueOf(0x447ad2ff),shape(PANEL,14),null));
+        return b;
+    }
     private void space(ViewGroup g,int height){g.addView(new View(this),new ViewGroup.LayoutParams(1,px(height)));}
     private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_SHORT).show();}
 
     private void renderHome(){
         ++loadToken;list.removeAllViews();pinnedBar.removeAllViews();filterBar.removeAllViews();searchArea.removeAllViews();verticalTimeline.setVisibility(View.GONE);bottomPager.setVisibility(View.GONE);bottomNav.setVisibility(View.GONE);
-        navBack.setVisibility(View.GONE);title.setText("Мои переписки");subtitle.setText("Сохранённые локальные архивы");status.setText("Все данные остаются на устройстве");
+        menuButton.setVisibility(View.VISIBLE);navBack.setVisibility(View.GONE);title.setText("Мои переписки");subtitle.setText("Сохранённые локальные архивы");status.setText("Все данные остаются на устройстве");
         TextView saved=text("★ Избранное и заметки",18,FG);saved.setPadding(px(14),px(18),px(8),px(18));saved.setBackground(shape(0xff304a64,17));
         list.addView(saved,p(-1,-2));saved.setOnClickListener(v->{home=false;screen="saved";renderSaved();});
         for(int i=0;i<archives.length();i++){
@@ -154,7 +162,7 @@ public class MainActivity extends Activity {
     }
     private void renderSaved(){
         ++loadToken;home=false;screen="saved";list.removeAllViews();filterBar.removeAllViews();searchArea.removeAllViews();pinnedBar.removeAllViews();bottomNav.setVisibility(View.GONE);bottomPager.setVisibility(View.GONE);verticalTimeline.setVisibility(View.GONE);
-        navBack.setVisibility(View.VISIBLE);title.setText("★ Избранное");subtitle.setText("Локальные заметки и сохранённые сообщения");
+        menuButton.setVisibility(View.GONE);navBack.setVisibility(View.VISIBLE);title.setText("★ Избранное");subtitle.setText("Локальные заметки и сохранённые сообщения");
         LinearLayout compose=row();list.addView(compose,p(-1,-2));
         EditText input=new EditText(this);input.setHint("Написать заметку…");input.setTextColor(FG);input.setHintTextColor(SUB);compose.addView(input,new LinearLayout.LayoutParams(0,-2,1));
         Button send=btn("➤");compose.addView(send,p(50,52));send.setOnClickListener(v->{String value=input.getText().toString().trim();if(value.isEmpty())return;worker.execute(()->{savedStore.add(value,null,null,null);runOnUiThread(this::renderSaved);});});
@@ -367,8 +375,10 @@ public class MainActivity extends Activity {
             return insets;
         });root.requestApplyInsets();
         LinearLayout head=row();base.addView(head,p(-1,55));
+        menuButton=btn("☰");menuButton.setTextSize(22);menuButton.setGravity(Gravity.CENTER);
+        head.addView(menuButton,p(42,42));menuButton.setOnClickListener(v->showSideMenu());
         navBack=btn("‹");navBack.setTextSize(25);navBack.setGravity(Gravity.CENTER);
-        head.addView(navBack,p(40,42));
+        head.addView(navBack,p(42,42));
         navBack.setOnClickListener(v->{if(!home){saveReadingProgress();home=true;screen="chat";returnScreen="";showPage();}});
         TextView logo=text("◉",26,ACCENT);logo.setGravity(Gravity.CENTER);head.addView(logo,p(37,42));
         LinearLayout headings=column();headings.setGravity(Gravity.CENTER_VERTICAL);
@@ -418,7 +428,7 @@ public class MainActivity extends Activity {
             TextView t=(TextView)bottomNav.getChildAt(i);boolean selected=screen.equals(t.getTag());
             t.setBackground(shape(selected?CHIP:PANEL,13));t.setTextColor(selected?FG:SUB);
         }
-        navBack.setVisibility(View.VISIBLE);title.setText(activeName);
+        menuButton.setVisibility(View.GONE);navBack.setVisibility(View.VISIBLE);title.setText(activeName);
         subtitle.setText(screen.equals("chat")?"История сообщений · локально":screen.equals("media")?"Фото, видео, голосовые и файлы":screen.equals("favorites")?"Твои сохранённые сообщения":"Найди любое сообщение");
     }
     private void configureBars(){
