@@ -1075,6 +1075,85 @@ public class MainActivity extends Activity {
        int idx=((name==null?0:name.hashCode())&Integer.MAX_VALUE)%participantColors.length;
        return getPreferences(MODE_PRIVATE).getInt(colorKey(name),name!=null&&name.equalsIgnoreCase(mine)?OUTGOING:participantColors[idx]);
     }
+
+    private void openPhotoGallery(MessageDb.Attachment initial){
+        final Dialog dialog=new Dialog(this,android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        FrameLayout frame=new FrameLayout(this);frame.setBackgroundColor(Color.BLACK);
+        ImageView display=new ImageView(this);display.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        frame.addView(display,new FrameLayout.LayoutParams(-1,-1));
+        TextView titleView=text("Фото",14,FG);titleView.setGravity(Gravity.CENTER);
+        FrameLayout.LayoutParams top=new FrameLayout.LayoutParams(-1,px(54),Gravity.TOP);frame.addView(titleView,top);
+        Button close=btn("✕");FrameLayout.LayoutParams closeParams=new FrameLayout.LayoutParams(px(49),px(49),Gravity.TOP|Gravity.END);frame.addView(close,closeParams);
+        close.setOnClickListener(v->dialog.dismiss());
+        final MessageDb.Attachment[] current={initial};
+        final int[] generation={0};
+        final java.util.function.Consumer<MessageDb.Attachment> show=attachment->{
+            current[0]=attachment;int token=++generation[0];titleView.setText("Фото · "+day(attachment.date)+"  ·  свайп влево / вправо");
+            display.setImageDrawable(null);DocumentFolder selectedFolder=folder;
+            if(selectedFolder==null)return;
+            mediaWorker.execute(()->{
+                Bitmap bitmap=null;
+                try{
+                    Uri uri=selectedFolder.resolve(attachment.path);
+                    if(uri!=null){
+                        BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;
+                        try(InputStream in=getContentResolver().openInputStream(uri)){BitmapFactory.decodeStream(in,null,bounds);}
+                        BitmapFactory.Options size=new BitmapFactory.Options();
+                        int scale=1;while(bounds.outWidth/scale>2400||bounds.outHeight/scale>2400)scale*=2;
+                        size.inSampleSize=scale;
+                        try(InputStream in=getContentResolver().openInputStream(uri)){bitmap=BitmapFactory.decodeStream(in,null,size);}
+                    }
+                }catch(Exception ignored){}
+                Bitmap result=bitmap;
+                runOnUiThread(()->{if(token==generation[0]&&dialog.isShowing()&&result!=null)display.setImageBitmap(result);});
+            });
+        };
+        display.setOnTouchListener(new View.OnTouchListener(){
+            float downX,downY;
+            public boolean onTouch(View v,MotionEvent event){
+                if(event.getAction()==MotionEvent.ACTION_DOWN){downX=event.getX();downY=event.getY();return true;}
+                if(event.getAction()==MotionEvent.ACTION_UP){
+                    float distance=event.getX()-downX;
+                    if(Math.abs(distance)>px(60)&&Math.abs(distance)>Math.abs(event.getY()-downY)){
+                        MessageDb.Attachment old=current[0];
+                        worker.execute(()->{
+                            MessageDb.Attachment next=db.adjacentMedia(old.kind,old.messageId,old.id,distance<0);
+                            runOnUiThread(()->{if(next!=null&&dialog.isShowing())show.accept(next);});
+                        });
+                    }
+                    return true;
+                }
+                return true;
+            }
+        });
+        dialog.setContentView(frame);dialog.show();
+        show.accept(initial);
+    }
+    private void groupedParticipantColors(){
+        worker.execute(()->{
+            List<String> authors=db.participants();
+            runOnUiThread(()->{
+                if(authors.isEmpty()){toast("Сначала импортируй сообщения");return;}
+                String[] names=authors.toArray(new String[0]);
+                boolean[] checked=new boolean[names.length];
+                new AlertDialog.Builder(this).setTitle("Объединить цвета участников")
+                    .setMultiChoiceItems(names,checked,(d,index,value)->checked[index]=value)
+                    .setNegativeButton("Отмена",null)
+                    .setPositiveButton("Выбрать цвет",(d,w)->{
+                        ArrayList<String> chosen=new ArrayList<>();
+                        for(int i=0;i<checked.length;i++)if(checked[i])chosen.add(names[i]);
+                        if(chosen.isEmpty()){toast("Не выбраны участники");return;}
+                        String[] colors={"Голубой","Сиреневый","Бирюзовый","Коричневый","Синий","Розовый","Оливковый","Стальной"};
+                        new AlertDialog.Builder(this).setTitle("Одинаковый цвет для "+chosen.size()+" имён")
+                            .setItems(colors,(dlg,pos)->{
+                                android.content.SharedPreferences.Editor edit=getPreferences(MODE_PRIVATE).edit();
+                                for(String name:chosen)edit.putInt(colorKey(name),participantColors[pos]);
+                                edit.apply();showPage();
+                            }).show();
+                    }).show();
+            });
+        });
+    }
     private void participantSettings(){
        worker.execute(()->{List<String> authors=db.participants();runOnUiThread(()->{
           if(authors.isEmpty()){toast("Сначала импортируй сообщения");return;}
@@ -1107,9 +1186,9 @@ public class MainActivity extends Activity {
         });
     }
     private void settingsMenu(){new AlertDialog.Builder(this).setTitle("Настройки").setItems(
-       new String[]{"Моё имя (сообщения справа)","Цвета участников","Мои архивы","Создать резервную копию","Восстановить резервную копию"},(d,i)->{
-          if(i==0)identityDialog();else if(i==1)participantSettings();else if(i==2)chatPicker();
-          else if(i==3)backupPicker();else restorePicker();
+       new String[]{"Моё имя (сообщения справа)","Цвета участников","Объединить цвета нескольких имён","Мои архивы","Создать резервную копию","Восстановить резервную копию"},(d,i)->{
+          if(i==0)identityDialog();else if(i==1)participantSettings();else if(i==2)groupedParticipantColors();else if(i==3)chatPicker();
+          else if(i==4)backupPicker();else restorePicker();
        }).show();}
     private void backupPicker(){
         new AlertDialog.Builder(this).setTitle("Резервная копия").setMessage("В ZIP сохраняются тексты всех чатов, избранные и закреплённые сообщения, заметки и настройки. Видео, фото и аудио не копируются: исходные папки Telegram нужно хранить отдельно. Копия не шифруется — сохраняй её в надёжном месте.")
