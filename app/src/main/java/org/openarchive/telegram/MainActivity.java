@@ -227,7 +227,8 @@ public class MainActivity extends Activity {
         getPreferences(MODE_PRIVATE).edit().putInt("read_offset_"+activeKey,approx).apply();
     }
     private void checkAutoFloat(){
-        if(player==null||inlineHolder==null||floatingPanel!=null||!screen.equals("chat")||!player.isPlaying())return;
+        if(player==null||inlineHolder==null||floatingPanel!=null||!screen.equals("chat"))return;
+        try{if(!player.isPlaying())return;}catch(Exception badState){return;}
         int[] p=new int[2],viewport=new int[2];inlineHolder.getLocationOnScreen(p);scroll.getLocationOnScreen(viewport);
         if(p[1]+inlineHolder.getHeight()<viewport[1]||p[1]>viewport[1]+scroll.getHeight()){
             if(playingAttachment!=null&&playingAttachment.kind.equals("round")){
@@ -810,7 +811,7 @@ public class MainActivity extends Activity {
                 }
                 wrap.requestLayout();
             }
-            playingAttachment=a;startInlineRound(a.path,holder,preview,overlay);
+            startRoundPlayback(a,holder,preview,overlay);
         });
         holder.setOnLongClickListener(v->{mediaActions(a);return true;});
         return wrap;
@@ -1169,6 +1170,17 @@ public class MainActivity extends Activity {
           if(which==participantColors.length)edit.remove(colorKey(name));else edit.putInt(colorKey(name),participantColors[which]);edit.apply();showPage();
        }).show();
     }
+    /** Always register the media AFTER startInlineRound, because it resets the previous player. */
+    private void startRoundPlayback(MessageDb.Attachment attachment,FrameLayout target,ImageView poster,TextView overlay){
+        startInlineRound(attachment.path,target,poster,overlay);
+        playingAttachment=attachment;
+        inlineHolder=target;
+        if(playerStrip!=null){
+            playerStrip.setVisibility(View.VISIBLE);
+            playerText.setText("◉ "+(attachment.author==null||attachment.author.trim().isEmpty()?"Видеосообщение":attachment.author));
+            playerPause.setText("⏸");
+        }
+    }
     private void toggleActivePlayback(){
         if(player==null)return;
         try{if(player.isPlaying()){player.pause();playerPause.setText("▶");}else{player.start();playerPause.setText("⏸");}}catch(Exception ignored){}
@@ -1272,9 +1284,7 @@ public class MainActivity extends Activity {
          public boolean onTouch(View v,MotionEvent e){if(e.getActionMasked()==MotionEvent.ACTION_DOWN){x=e.getRawX();y=e.getRawY();startX=v.getTranslationX();startY=v.getTranslationY();return true;}
            if(e.getActionMasked()==MotionEvent.ACTION_MOVE){v.setTranslationX(startX+e.getRawX()-x);v.setTranslationY(startY+e.getRawY()-y);return true;}return false;}
        });
-       playingAttachment=a;startInlineRound(a.path,round,preview,play);
-       playerStrip.setVisibility(View.VISIBLE);
-       playerText.setText("▶ "+(a.author==null?"Видеосообщение":a.author));
+       startRoundPlayback(a,round,preview,play);
        handler.postDelayed(()->{try{if(player!=null&&resume>0)player.seekTo(resume);}catch(Exception ignored){}},650);
     }
 
