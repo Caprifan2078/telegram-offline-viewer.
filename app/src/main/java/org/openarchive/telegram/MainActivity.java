@@ -927,7 +927,7 @@ public class MainActivity extends Activity {
                 GridLayout.LayoutParams t=new GridLayout.LayoutParams();t.width=cell-px(4);t.height=cell-px(4);t.setMargins(px(2),px(2),px(2),px(2));gallery.addView(tile,t);
                 ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);
                 tile.addView(image,new FrameLayout.LayoutParams(-1,-1));loadThumbnail(a.path,a.kind,image);
-                if(a.kind.equals("video")){TextView play=text("▶",25,FG);play.setGravity(Gravity.CENTER);tile.addView(play,new FrameLayout.LayoutParams(-1,-1));}
+                if(a.kind.equals("video")||a.kind.equals("gif")&&a.path.toLowerCase(Locale.ROOT).matches(".*\\.(mp4|webm|m4v)(\\?.*)?$")){TextView play=text("▶",25,FG);play.setGravity(Gravity.CENTER);tile.addView(play,new FrameLayout.LayoutParams(-1,-1));}
                 tile.setOnClickListener(v->openMedia(a));tile.setOnLongClickListener(v->{mediaActions(a);return true;});
             }
         }else for(MessageDb.Attachment a:media){
@@ -953,7 +953,7 @@ public class MainActivity extends Activity {
             box.setBackground(shape(CHIP,11));box.setClipToOutline(true);
             ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);
             box.addView(image,new FrameLayout.LayoutParams(-1,-1));loadThumbnail(a.path,a.kind,image);
-            if(a.kind.equals("video")){TextView play=text("▶",27,FG);play.setGravity(Gravity.CENTER);box.addView(play,new FrameLayout.LayoutParams(-1,-1));}
+            if(a.kind.equals("video")||a.kind.equals("gif")&&a.path.toLowerCase(Locale.ROOT).matches(".*\\.(mp4|webm|m4v)(\\?.*)?$")){TextView play=text("▶",27,FG);play.setGravity(Gravity.CENTER);box.addView(play,new FrameLayout.LayoutParams(-1,-1));}
             box.setOnClickListener(v->openMedia(a));box.setOnLongClickListener(v->{mediaActions(a);return true;});
             FrameLayout outer=new FrameLayout(this);outer.addView(box,new FrameLayout.LayoutParams(px(size),px(gallery?84:128)));return outer;
         }
@@ -1267,7 +1267,7 @@ public class MainActivity extends Activity {
             try{
                 Uri uri=current.resolve(path);
                 if(uri!=null){
-                    boolean picture=kind.equals("image")||kind.equals("gif")||kind.equals("sticker");
+                    boolean picture=kind.equals("image")||kind.equals("sticker")||kind.equals("gif")&&!path.toLowerCase(Locale.ROOT).matches(".*\\.(mp4|m4v|webm)(\\?.*)?$");
                     if(picture){BitmapFactory.Options o=new BitmapFactory.Options();o.inJustDecodeBounds=true;
                         try(InputStream is=getContentResolver().openInputStream(uri)){BitmapFactory.decodeStream(is,null,o);}
                         o.inJustDecodeBounds=false;o.inSampleSize=Math.max(1,Math.max(o.outWidth/230,o.outHeight/230));
