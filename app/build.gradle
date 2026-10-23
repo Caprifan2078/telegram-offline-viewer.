@@ -7,8 +7,8 @@ android {
         applicationId 'org.openarchive.telegram'
         minSdk 26
         targetSdk 35
-        versionCode 15
-        versionName '0.15-beta'
+        versionCode 16
+        versionName '0.16-beta'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
@@ -16,4 +16,4 @@ android {
     }
 }
 
-dependencies { implementation 'org.jsoup:jsoup:1.21.2' }
+dependencies { implementation 'org.jsoup:jsoup:1.21.2'; implementation 'com.github.junrar:junrar:7.5.5' }
