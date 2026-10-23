@@ -144,6 +144,21 @@ final class FullBackup {
             if(roots.length()>1000)throw new IOException("Слишком много переписок");
             JSONArray prior=new JSONArray(prefs.getString("archive_registry","[]"));
             int oldCount=prior.length();
+            // Validate that both layers agree before changing any user databases.
+            int expected=-1;
+            try(InputStream input=new FileInputStream(metadata);
+                ZipInputStream nested=new ZipInputStream(new BufferedInputStream(input))){
+                ZipEntry part;
+                while((part=nested.getNextEntry())!=null){
+                    if("manifest.json".equals(part.getName())){
+                        ByteArrayOutputStream manifestBytes=new ByteArrayOutputStream();
+                        stream(nested,manifestBytes,2*1024*1024);
+                        expected=new JSONObject(manifestBytes.toString("UTF-8")).getJSONArray("chats").length();
+                        break;
+                    }
+                }
+            }
+            if(expected<0||expected!=roots.length())throw new IOException("Неполный архив: число переписок не совпадает");
             int restored=ArchiveBackup.restore(ctx,prefs,Uri.fromFile(metadata),progress::show);
             if(roots.length()!=restored)throw new IOException("Количество медиа-каталогов не совпадает");
             JSONArray all=new JSONArray(prefs.getString("archive_registry","[]"));
