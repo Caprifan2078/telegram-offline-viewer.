@@ -6,6 +6,8 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Locale;
 
@@ -104,6 +106,26 @@ class MessageDb extends SQLiteOpenHelper {
         return new Filter(cond.isEmpty()?"":" WHERE "+android.text.TextUtils.join(" AND ",cond),args.toArray(new String[0]));
     }
     private static String escapeLike(String s){return s.replace("\\","\\\\").replace("%","\\%").replace("_","\\_");}
+    /** Count matching messages AND literal (non-overlapping) occurrences inside message text.
+     * For quick FTS prefix searches these are different metrics, intentionally labelled. */
+    static final class SearchStats{
+        final int messages;
+        final long literalOccurrences;
+        SearchStats(int count,long occurrences){messages=count;literalOccurrences=occurrences;}
+    }
+    SearchStats searchStats(String q,boolean deep,String author,boolean onlyMedia){
+        Filter f=condition(q,deep,author,onlyMedia,false);
+        String needle=fold(q==null?"":q.trim());
+        if(needle.isEmpty())return new SearchStats(count(q,deep,author,onlyMedia,false),0);
+        String folded="COALESCE(body_fold,LOWER(body),'')";
+        String sql="SELECT COUNT(*), COALESCE(SUM((LENGTH("+folded+") - LENGTH(REPLACE("+folded+", ?, ''))) / NULLIF(LENGTH(?),0)),0) FROM messages"+f.clause;
+        String[] arguments=new String[f.args.length+2];
+        arguments[0]=needle;arguments[1]=needle;
+        System.arraycopy(f.args,0,arguments,2,f.args.length);
+        try(Cursor c=getReadableDatabase().rawQuery(sql,arguments)){
+            return c.moveToFirst()?new SearchStats(c.getInt(0),c.getLong(1)):new SearchStats(0,0);
+        }
+    }
     int count(String q,boolean deep,String author,boolean onlyMedia,boolean favorites){
         Filter f=condition(q,deep,author,onlyMedia,favorites);
         try(Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM messages"+f.clause,f.args)){return c.moveToFirst()?c.getInt(0):0;}
@@ -173,6 +195,34 @@ class MessageDb extends SQLiteOpenHelper {
             a.author=c.getString(4);a.date=c.getString(5);a.body=c.getString(6);list.add(a);
         }}
         return list;
+    }
+    /** Fetch all media for a page in batches instead of one SQLite query per message. */
+    Map<Long,List<Attachment>> attachmentsForMessages(List<Item> items){
+        HashMap<Long,List<Attachment>> out=new HashMap<>();
+        if(items==null||items.isEmpty())return out;
+        SQLiteDatabase database=getReadableDatabase();
+        for(int start=0;start<items.size();start+=200){
+            int size=Math.min(200,items.size()-start);
+            StringBuilder clause=new StringBuilder();
+            String[] args=new String[size];
+            for(int i=0;i<size;i++){
+                if(i>0)clause.append(',');
+                clause.append('?');
+                args[i]=String.valueOf(items.get(start+i).id);
+            }
+            String sql="SELECT id,message_id,path,kind FROM attachments WHERE message_id IN ("+clause+") ORDER BY message_id,id";
+            try(Cursor c=database.rawQuery(sql,args)){
+                while(c.moveToNext()){
+                    Attachment a=new Attachment();
+                    a.id=c.getLong(0);a.messageId=c.getLong(1);
+                    a.path=c.getString(2);a.kind=c.getString(3);
+                    List<Attachment> group=out.get(a.messageId);
+                    if(group==null){group=new ArrayList<>();out.put(a.messageId,group);}
+                    group.add(a);
+                }
+            }
+        }
+        return out;
     }
     List<Attachment> attachmentsForMessage(long id){
         List<Attachment> list=new ArrayList<>();
