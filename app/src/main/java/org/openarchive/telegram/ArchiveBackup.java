@@ -172,12 +172,15 @@ final class ArchiveBackup {
                 archive.put("key",newKey);archive.put("name",name);archive.put("tree","");
                 registered.put(archive);
             }
-            // Merge restored notebook items with existing local notes; never overwrite the user's notes.
+            // Notes are inserted in one transaction. If registration fails, inserted notes roll back.
             SavedStore store=new SavedStore(ctx);
-            SQLiteDatabase other=SQLiteDatabase.openDatabase(files.get(notes.getString("file")).getAbsolutePath(),null,SQLiteDatabase.OPEN_READONLY);
-            try(Cursor c=other.rawQuery("SELECT body,file_name,file_id,mime FROM saved_notes ORDER BY id",null)){
-                while(c.moveToNext())store.add(c.getString(0),c.getString(1),null,c.getString(3)); // old content URIs cannot be reused on a different phone
-            }finally{other.close();store.close();}
+            SQLiteDatabase localNotes=store.getWritableDatabase();
+            localNotes.beginTransaction();
+            try{
+                SQLiteDatabase other=SQLiteDatabase.openDatabase(files.get(notes.getString("file")).getAbsolutePath(),null,SQLiteDatabase.OPEN_READONLY);
+                try(Cursor c=other.rawQuery("SELECT body,file_name,file_id,mime FROM saved_notes ORDER BY id",null)){
+                    while(c.moveToNext())store.add(c.getString(0),c.getString(1),null,c.getString(3));
+                }finally{other.close();}
             if(prefsSaved!=null){
                 for(Iterator<String> it=prefsSaved.keys();it.hasNext();){
                     String key=it.next();
@@ -185,6 +188,17 @@ final class ArchiveBackup {
                         for(Map.Entry<String,String> map:keyMap.entrySet()){
                             String prefix="sender_"+map.getKey()+"_";
                             if(key.startsWith(prefix)){edit.putInt("sender_"+map.getValue()+"_"+key.substring(prefix.length()),prefsSaved.optInt(key));break;}
+                        }
+                    }else if(key.startsWith("person_avatar_")||key.startsWith("chat_avatar_")||key.startsWith("wallpaper_image_")){
+                        for(Map.Entry<String,String> map:keyMap.entrySet()){
+                            for(String prefix:new String[]{"person_avatar_","chat_avatar_","wallpaper_image_"}){
+                                String oldPrefix=prefix+map.getKey();
+                                if(key.equals(oldPrefix)||key.startsWith(oldPrefix+"_")){
+                                    String newKey=prefix+map.getValue()+key.substring(oldPrefix.length());
+                                    edit.putString(newKey,prefsSaved.optString(key));
+                                    break;
+                                }
+                            }
                         }
                     }else if(key.startsWith("read_offset_")){
                         String original=key.substring("read_offset_".length());
@@ -194,6 +208,8 @@ final class ArchiveBackup {
             }
             edit.putString("archive_registry",registered.toString());
             if(!edit.commit())throw new IOException("Не удалось сохранить список архивов");
+                localNotes.setTransactionSuccessful();
+            }finally{localNotes.endTransaction();store.close();}
             return chats.length();
         }catch(Exception e){
             // Do not remove or overwrite older chats on restore failure.
