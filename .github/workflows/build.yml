@@ -1,7 +1,7 @@
-name: Build Telegram Archive v0.22 APK — archive and dock verification
+name: Build Telegram Archive v0.23 APK — archive and dock verification
 on:
   push:
-    branches: [main, feat/v022-premium-wallpaper-ui-tests]
+    branches: [main, feat/v023-emulator-bench-media-polish]
   workflow_dispatch:
 permissions:
   contents: read
@@ -33,14 +33,18 @@ jobs:
       - name: Run Android emulator UI smoke tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 30
           arch: x86_64
-          profile: pixel_6
+          profile: pixel_2
           disable-animations: true
-          script: gradle connectedDebugAndroidTest --no-daemon
+          script: |
+            adb wait-for-device
+            adb shell settings put global verifier_verify_adb_installs 0
+            adb shell input keyevent 82
+            gradle connectedDebugAndroidTest --no-daemon --stacktrace
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Telegram-Archive-v0.22-APK
+          name: Telegram-Archive-v0.23-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
