@@ -617,11 +617,11 @@ public class MainActivity extends Activity {
             String date=day(m.date);if(!date.equals(last)){dateSeparator(date);last=date;}
             boolean own=!mine.isEmpty()&&mine.equalsIgnoreCase(m.author==null?"":m.author.trim());
             LinearLayout line=row();line.setGravity(own?Gravity.RIGHT:Gravity.LEFT);
-            LinearLayout.LayoutParams linep=p(-1,-2);linep.setMargins(px(2),px(2),px(2),px(5));list.addView(line,linep);
+            LinearLayout.LayoutParams linep=p(-1,-2);linep.setMargins(px(2),px(1),px(2),px(4));list.addView(line,linep);
             if(!own){TextView avatar=text(initial(m.author),14,FG);avatar.setTypeface(null,Typeface.BOLD);
                 avatar.setGravity(Gravity.CENTER);avatar.setBackground(shape(authorColor(m.author),100));
                 LinearLayout.LayoutParams ap=p(32,32);ap.rightMargin=px(7);line.addView(avatar,ap);}
-            LinearLayout bubble=column();bubble.setPadding(px(13),px(8),px(13),px(9));
+            LinearLayout bubble=column();bubble.setPadding(px(9),px(6),px(9),px(7));
             int chosenColor=authorColor(m.author);
             bubble.setBackground(gradient(m.id==highlightId?0xff477c91:chosenColor,
                     m.id==highlightId?0xff33576b:darken(chosenColor),17));
@@ -741,13 +741,13 @@ public class MainActivity extends Activity {
         if(a.kind.equals("round"))return circle(a,gallery?124:190,!gallery);
         if(a.kind.equals("voice")||a.kind.equals("audio"))return voice(a,gallery);
         if(a.kind.equals("image")||a.kind.equals("gif")||a.kind.equals("sticker")||a.kind.equals("video")){
-            FrameLayout box=new FrameLayout(this);int size=gallery?84:190;
+            FrameLayout box=new FrameLayout(this);int size=gallery?84:170;
             box.setBackground(shape(CHIP,11));box.setClipToOutline(true);
             ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);
             box.addView(image,new FrameLayout.LayoutParams(-1,-1));loadThumbnail(a.path,a.kind,image);
             if(a.kind.equals("video")){TextView play=text("▶",27,FG);play.setGravity(Gravity.CENTER);box.addView(play,new FrameLayout.LayoutParams(-1,-1));}
             box.setOnClickListener(v->openMedia(a));box.setOnLongClickListener(v->{mediaActions(a);return true;});
-            FrameLayout outer=new FrameLayout(this);outer.addView(box,new FrameLayout.LayoutParams(px(size),px(gallery?84:140)));return outer;
+            FrameLayout outer=new FrameLayout(this);outer.addView(box,new FrameLayout.LayoutParams(px(size),px(gallery?84:128)));return outer;
         }
         TextView file=text("📎 "+clip(filename(a.path),gallery?18:33),13,ACCENT);file.setPadding(px(8),px(10),px(8),px(10));
         file.setBackground(shape(CHIP,12));file.setOnClickListener(v->openMedia(a));
@@ -1080,57 +1080,87 @@ public class MainActivity extends Activity {
     }
 
     private void openPhotoGallery(MessageDb.Attachment initial){
-        final Dialog dialog=new Dialog(this,android.R.style.Theme_Black_NoTitleBar_Fullscreen);
-        FrameLayout frame=new FrameLayout(this);frame.setBackgroundColor(Color.BLACK);
-        ImageView display=new ImageView(this);display.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        frame.addView(display,new FrameLayout.LayoutParams(-1,-1));
-        TextView titleView=text("Фото",14,FG);titleView.setGravity(Gravity.CENTER);
-        FrameLayout.LayoutParams top=new FrameLayout.LayoutParams(-1,px(54),Gravity.TOP);frame.addView(titleView,top);
-        Button close=btn("✕");FrameLayout.LayoutParams closeParams=new FrameLayout.LayoutParams(px(49),px(49),Gravity.TOP|Gravity.END);frame.addView(close,closeParams);
+        Dialog dialog=new Dialog(this,android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        FrameLayout frame=new FrameLayout(this);frame.setBackgroundColor(0xff090e16);
+        ImageView picture=new ImageView(this);picture.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        frame.addView(picture,new FrameLayout.LayoutParams(-1,-1));
+        TextView caption=text("Фото",14,FG);caption.setGravity(Gravity.CENTER);
+        frame.addView(caption,new FrameLayout.LayoutParams(-1,px(52),Gravity.TOP));
+        Button close=btn("✕");frame.addView(close,new FrameLayout.LayoutParams(px(48),px(48),Gravity.TOP|Gravity.END));
         close.setOnClickListener(v->dialog.dismiss());
+        HorizontalScrollView strip=new HorizontalScrollView(this);strip.setHorizontalScrollBarEnabled(false);
+        LinearLayout thumbsRow=row();thumbsRow.setPadding(px(4),px(4),px(4),px(4));strip.addView(thumbsRow);
+        FrameLayout.LayoutParams film=new FrameLayout.LayoutParams(-1,px(83),Gravity.BOTTOM);frame.addView(strip,film);
         final MessageDb.Attachment[] current={initial};
         final int[] generation={0};
-        final java.util.function.Consumer<MessageDb.Attachment> show=attachment->{
-            current[0]=attachment;int token=++generation[0];titleView.setText("Фото · "+day(attachment.date)+"  ·  свайп влево / вправо");
-            display.setImageDrawable(null);DocumentFolder selectedFolder=folder;
-            if(selectedFolder==null)return;
+        final java.util.function.Consumer<MessageDb.Attachment>[] show=new java.util.function.Consumer[1];
+        show[0]=item->{
+            current[0]=item;int id=++generation[0];
+            caption.setText(day(item.date)+" · "+(item.author==null?"Фото":item.author));
+            DocumentFolder source=folder;
+            if(source==null)return;
             mediaWorker.execute(()->{
                 Bitmap bitmap=null;
                 try{
-                    Uri uri=selectedFolder.resolve(attachment.path);
+                    Uri uri=source.resolve(item.path);
                     if(uri!=null){
                         BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;
                         try(InputStream in=getContentResolver().openInputStream(uri)){BitmapFactory.decodeStream(in,null,bounds);}
-                        BitmapFactory.Options size=new BitmapFactory.Options();
-                        int scale=1;while(bounds.outWidth/scale>2400||bounds.outHeight/scale>2400)scale*=2;
-                        size.inSampleSize=scale;
-                        try(InputStream in=getContentResolver().openInputStream(uri)){bitmap=BitmapFactory.decodeStream(in,null,size);}
+                        BitmapFactory.Options opts=new BitmapFactory.Options();int scale=1;
+                        while(bounds.outWidth/scale>2400||bounds.outHeight/scale>2400)scale*=2;
+                        opts.inSampleSize=scale;
+                        try(InputStream in=getContentResolver().openInputStream(uri)){bitmap=BitmapFactory.decodeStream(in,null,opts);}
                     }
                 }catch(Exception ignored){}
-                Bitmap result=bitmap;
-                runOnUiThread(()->{if(token==generation[0]&&dialog.isShowing()&&result!=null)display.setImageBitmap(result);});
+                Bitmap loaded=bitmap;
+                runOnUiThread(()->{
+                    if(id!=generation[0]||!dialog.isShowing())return;
+                    picture.animate().cancel();picture.setAlpha(0f);picture.setTranslationX(px(12));
+                    if(loaded!=null)picture.setImageBitmap(loaded);
+                    picture.animate().alpha(1f).translationX(0).setDuration(230).setInterpolator(new DecelerateInterpolator()).start();
+                });
+            });
+            worker.execute(()->{
+                ArrayList<MessageDb.Attachment> older=new ArrayList<>(),newer=new ArrayList<>();
+                MessageDb.Attachment cursor=item;
+                for(int i=0;i<5;i++){cursor=db.adjacentMedia("image",cursor.messageId,cursor.id,false);if(cursor==null)break;older.add(0,cursor);}
+                cursor=item;
+                for(int i=0;i<5;i++){cursor=db.adjacentMedia("image",cursor.messageId,cursor.id,true);if(cursor==null)break;newer.add(cursor);}
+                ArrayList<MessageDb.Attachment> window=new ArrayList<>(older);window.add(item);window.addAll(newer);
+                runOnUiThread(()->{
+                    if(id!=generation[0]||!dialog.isShowing())return;
+                    thumbsRow.removeAllViews();
+                    for(MessageDb.Attachment photo:window){
+                        ImageView thumb=new ImageView(this);thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                        LinearLayout.LayoutParams p=p(65,65);p.setMargins(px(3),0,px(3),0);thumbsRow.addView(thumb,p);
+                        thumb.setBackground(shape(photo.id==item.id?ACCENT:PANEL,7));
+                        thumb.setPadding(px(photo.id==item.id?3:1),px(photo.id==item.id?3:1),px(photo.id==item.id?3:1),px(photo.id==item.id?3:1));
+                        loadThumbnail(photo.path,"image",thumb);
+                        thumb.setOnClickListener(v->show[0].accept(photo));
+                    }
+                    strip.post(()->strip.smoothScrollTo(Math.max(0,(older.size()-2)*px(71)),0));
+                });
             });
         };
-        display.setOnTouchListener(new View.OnTouchListener(){
-            float downX,downY;
-            public boolean onTouch(View v,MotionEvent event){
-                if(event.getAction()==MotionEvent.ACTION_DOWN){downX=event.getX();downY=event.getY();return true;}
-                if(event.getAction()==MotionEvent.ACTION_UP){
-                    float distance=event.getX()-downX;
-                    if(Math.abs(distance)>px(60)&&Math.abs(distance)>Math.abs(event.getY()-downY)){
-                        MessageDb.Attachment old=current[0];
-                        worker.execute(()->{
-                            MessageDb.Attachment next=db.adjacentMedia(old.kind,old.messageId,old.id,distance<0);
-                            runOnUiThread(()->{if(next!=null&&dialog.isShowing())show.accept(next);});
-                        });
-                    }
-                    return true;
-                }
-                return true;
+        picture.setOnTouchListener(new View.OnTouchListener(){
+            float x,y;
+            public boolean onTouch(View v,MotionEvent e){
+                if(e.getActionMasked()==MotionEvent.ACTION_DOWN){x=e.getX();y=e.getY();return true;}
+                if(e.getActionMasked()==MotionEvent.ACTION_UP){
+                    float dx=e.getX()-x;
+                    if(Math.abs(dx)>px(55)&&Math.abs(dx)>Math.abs(e.getY()-y)){
+                        picture.animate().translationX(dx<0?-px(85):px(85)).alpha(0f).setDuration(150).withEndAction(()->{
+                            MessageDb.Attachment old=current[0];
+                            worker.execute(()->{
+                                MessageDb.Attachment next=db.adjacentMedia("image",old.messageId,old.id,dx<0);
+                                runOnUiThread(()->{if(next!=null&&dialog.isShowing())show[0].accept(next);else{picture.setAlpha(1);picture.setTranslationX(0);}});
+                            });
+                        }).start();
+                    }return true;
+                }return true;
             }
         });
-        dialog.setContentView(frame);dialog.show();
-        show.accept(initial);
+        dialog.setContentView(frame);dialog.show();show[0].accept(initial);
     }
     private void groupedParticipantColors(){
         worker.execute(()->{
