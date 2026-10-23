@@ -21,13 +21,18 @@ final class FullBackup {
         return count;
     }
     static void export(Context ctx,SharedPreferences prefs,Uri target,Progress progress) throws Exception {
+        try(OutputStream output=ctx.getContentResolver().openOutputStream(target,"w")){
+            if(output==null)throw new IOException("Нельзя открыть файл назначения");
+            export(ctx,prefs,output,progress);
+        }
+    }
+    static void export(Context ctx,SharedPreferences prefs,OutputStream target,Progress progress) throws Exception {
         JSONArray chats=new JSONArray(prefs.getString("archive_registry","[]"));
         File metadata=File.createTempFile("tg-metadata-", ".zip",ctx.getCacheDir());
         try{
             ArchiveBackup.write(ctx,prefs,Uri.fromFile(metadata),progress::show);
-            try(OutputStream raw=ctx.getContentResolver().openOutputStream(target,"w")){
-                if(raw==null)throw new IOException("Нет доступа к файлу назначения");
-                try(ZipOutputStream zip=new ZipOutputStream(new BufferedOutputStream(raw,128*1024))){
+            {
+                try(ZipOutputStream zip=new ZipOutputStream(new BufferedOutputStream(target,128*1024))){
                     zip.setLevel(1); // media is typically already compressed
                     writeZipFile(zip,metadata,"metadata.zip");
                     JSONObject index=new JSONObject();
