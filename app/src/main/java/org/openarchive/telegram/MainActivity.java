@@ -142,6 +142,36 @@ public class MainActivity extends Activity {
     private void space(ViewGroup g,int height){g.addView(new View(this),new ViewGroup.LayoutParams(1,px(height)));}
     private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_SHORT).show();}
 
+    private void showSideMenu(){
+        final Dialog dialog=new Dialog(this,android.R.style.Theme_Translucent_NoTitleBar);
+        FrameLayout overlay=new FrameLayout(this);overlay.setBackgroundColor(0x99040912);
+        LinearLayout pane=column();pane.setPadding(px(20),px(28),px(18),px(18));
+        pane.setBackground(gradient(0xff213751,0xff101e30,22));pane.setElevation(px(14));
+        FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(Math.min(px(316),getResources().getDisplayMetrics().widthPixels-px(42)),-1,Gravity.START);
+        overlay.addView(pane,lp);
+        TextView app=text("◉   TELEGRAM ARCHIVE",17,FG);app.setTypeface(null,Typeface.BOLD);app.setPadding(px(4),px(9),0,px(4));pane.addView(app);
+        TextView desc=text("Твоя коллекция переписок · офлайн",12,SUB);desc.setPadding(px(4),0,0,px(22));pane.addView(desc);
+        sideMenuItem(pane,"✉  Мои переписки","Открыть список архивов",()->{home=true;screen="chat";showPage();dialog.dismiss();});
+        sideMenuItem(pane,"★  Избранное","Заметки и сохранённые сообщения",()->{home=false;screen="saved";renderSaved();dialog.dismiss();});
+        sideMenuItem(pane,"＋  Импортировать чат","Папка Telegram, ZIP или RAR",()->{dialog.dismiss();chooseFolder();});
+        sideMenuItem(pane,"⇧  Экспортировать чаты","Резервная копия сообщений и настроек",()->{dialog.dismiss();backupPicker();});
+        sideMenuItem(pane,"⇩  Восстановить архив","Импорт резервной копии приложения",()->{dialog.dismiss();restorePicker();});
+        sideMenuItem(pane,"⚙  Настройки","Имя, цвета участников и другое",()->{dialog.dismiss();settingsMenu();});
+        View gap=new View(this);pane.addView(gap,new LinearLayout.LayoutParams(1,0,1));
+        TextView label=text("Telegram Archive  ·  v"+BuildConfig.VERSION_NAME+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
+        label.setPadding(px(4),px(16),0,px(12));pane.addView(label);
+        overlay.setOnClickListener(v->dialog.dismiss());pane.setOnClickListener(v->{});
+        dialog.setContentView(overlay);dialog.show();Window w=dialog.getWindow();if(w!=null)w.setLayout(-1,-1);
+        pane.setTranslationX(-px(340));pane.animate().translationX(0).setDuration(260).setInterpolator(new DecelerateInterpolator()).start();
+    }
+    private void sideMenuItem(LinearLayout pane,String heading,String detail,Runnable action){
+        LinearLayout item=column();item.setPadding(px(13),px(12),px(9),px(12));
+        item.setBackground(new RippleDrawable(ColorStateList.valueOf(0x445aaad8),shape(0xff29435f,15),null));
+        LinearLayout.LayoutParams params=p(-1,-2);params.bottomMargin=px(8);pane.addView(item,params);
+        TextView name=text(heading,15,FG);name.setTypeface(null,Typeface.BOLD);item.addView(name);
+        TextView summary=text(detail,11,SUB);summary.setPadding(0,px(4),0,0);item.addView(summary);
+        item.setOnClickListener(v->action.run());
+    }
     private void renderHome(){
         ++loadToken;list.removeAllViews();pinnedBar.removeAllViews();filterBar.removeAllViews();searchArea.removeAllViews();verticalTimeline.setVisibility(View.GONE);bottomPager.setVisibility(View.GONE);bottomNav.setVisibility(View.GONE);
         menuButton.setVisibility(View.VISIBLE);navBack.setVisibility(View.GONE);title.setText("Мои переписки");subtitle.setText("Сохранённые локальные архивы");status.setText("Все данные остаются на устройстве");
