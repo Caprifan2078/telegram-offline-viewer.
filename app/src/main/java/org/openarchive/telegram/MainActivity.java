@@ -901,6 +901,16 @@ public class MainActivity extends Activity {
                     m.id==highlightId?HIGHLIGHT:darken(chosenColor),bubbleRadius));
             if(m.id==highlightId){glowBubble=bubble;glowBase=chosenColor;glowId=m.id;line.setBackground(shape(0x443ad0fc,12));}
             LinearLayout.LayoutParams bp=p(-2,-2);line.addView(bubble,bp);
+            if(own){
+                Bitmap ownPhoto=PersonalImages.load(this,getPreferences(MODE_PRIVATE)
+                    .getString(PersonalImages.avatarKey(activeKey,m.author),""));
+                if(ownPhoto!=null){
+                    ImageView ownAvatar=new ImageView(this);
+                    ownAvatar.setImageBitmap(PersonalImages.circular(ownPhoto,px(30)));
+                    LinearLayout.LayoutParams avatarParams=p(30,30);avatarParams.leftMargin=px(7);
+                    line.addView(ownAvatar,avatarParams);
+                }
+            }
             int maxWidth=getResources().getDisplayMetrics().widthPixels-px(93);
             if(maxWidth<px(190))maxWidth=px(240);final int mw=maxWidth;
             bubble.setOnLongClickListener(v->{messageActions(m);return true;});
