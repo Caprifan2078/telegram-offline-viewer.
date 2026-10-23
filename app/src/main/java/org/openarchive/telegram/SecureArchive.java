@@ -46,6 +46,9 @@ final class SecureArchive {
     static InputStream openInput(Context ctx,Uri uri,char[] password) throws Exception{
         InputStream raw=ctx.getContentResolver().openInputStream(uri);
         if(raw==null)throw new IOException("Файл не открылся");
+        return decryptedInput(raw,password);
+    }
+    static InputStream decryptedInput(InputStream raw,char[] password) throws Exception{
         BufferedInputStream buffered=new BufferedInputStream(raw,CHUNK);
         buffered.mark(40);
         byte[] magic=new byte[8];int read=0,n;
