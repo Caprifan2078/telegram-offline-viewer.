@@ -1320,22 +1320,40 @@ public class MainActivity extends Activity {
             if(source==null)return;
             mediaWorker.execute(()->{
                 Bitmap bitmap=null;
+                android.graphics.drawable.Drawable animated=null;
                 try{
                     Uri uri=source.resolve(item.path);
                     if(uri!=null){
+                        if(item.kind.equals("gif")&&item.path.toLowerCase(Locale.ROOT).matches(".*\\.gif(\\?.*)?$")&&Build.VERSION.SDK_INT>=28){
+                            try{
+                                android.graphics.ImageDecoder.Source gifSource=android.graphics.ImageDecoder.createSource(getContentResolver(),uri);
+                                animated=android.graphics.ImageDecoder.decodeDrawable(gifSource,(decoder,info,imageSource)->{
+                                    int iw=info.getSize().getWidth(),ih=info.getSize().getHeight();
+                                    int max=Math.max(iw,ih);
+                                    if(max>1800)decoder.setTargetSize(Math.max(1,iw*1800/max),Math.max(1,ih*1800/max));
+                                });
+                            }catch(Exception ignored){} 
+                        }
+                        if(animated==null){
                         BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;
                         try(InputStream in=getContentResolver().openInputStream(uri)){BitmapFactory.decodeStream(in,null,bounds);}
                         BitmapFactory.Options opts=new BitmapFactory.Options();int scale=1;
                         while(bounds.outWidth/scale>2400||bounds.outHeight/scale>2400)scale*=2;
                         opts.inSampleSize=scale;
                         try(InputStream in=getContentResolver().openInputStream(uri)){bitmap=BitmapFactory.decodeStream(in,null,opts);}
+                        }
                     }
                 }catch(Exception ignored){}
                 Bitmap loaded=bitmap;
+                android.graphics.drawable.Drawable loadedAnimation=animated;
                 runOnUiThread(()->{
                     if(id!=generation[0]||!dialog.isShowing())return;
                     picture.animate().cancel();picture.setAlpha(0f);picture.setTranslationX(px(12));
-                    if(loaded!=null)picture.setImageBitmap(loaded);
+                    if(loadedAnimation!=null){
+                        picture.setImageDrawable(loadedAnimation);
+                        if(Build.VERSION.SDK_INT>=28&&loadedAnimation instanceof android.graphics.drawable.AnimatedImageDrawable)
+                            ((android.graphics.drawable.AnimatedImageDrawable)loadedAnimation).start();
+                    }else if(loaded!=null)picture.setImageBitmap(loaded);
                     picture.animate().alpha(1f).translationX(0).setDuration(motionDuration(260)).setInterpolator(new DecelerateInterpolator()).start();
                 });
             });
