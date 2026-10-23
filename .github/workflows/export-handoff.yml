@@ -1,0 +1,43 @@
+name: Export handoff source snapshots
+on:
+  push:
+    branches: [feat/v025-safe-backup-avatar-wallpaper]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  handoff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Package current source and history
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p handoff-out/history
+          git archive --format=zip --output=handoff-out/PROJECT_CURRENT_SOURCE.zip HEAD
+          printf 'ref\tsha\tresult\n' > handoff-out/history/REFS.tsv
+          for entry in             'v0.3|feat/sqlite-native-v03'             'v0.10|feat/v010-insets-nav-jump-highlight'             'v0.15|feat/v015-player-gallery-polish'             'v0.21|feat/v021-themes-emulator-tests'             'v0.23|feat/v023-emulator-bench-media-polish' \
+            'v0.24|feat/v024-verified-media-backups-and-motion'; do
+            label="${entry%%|*}"
+            ref="${entry#*|}"
+            if git rev-parse --verify -q "refs/remotes/origin/$ref" >/dev/null; then
+              sha="$(git rev-parse "refs/remotes/origin/$ref")"
+              git archive --format=zip --output="handoff-out/history/SOURCE_${label}.zip" "$sha"
+              printf '%s\t%s\t%s\n' "$ref" "$sha" 'archived' >> handoff-out/history/REFS.tsv
+            else
+              printf '%s\t%s\t%s\n' "$ref" 'unknown' 'missing' >> handoff-out/history/REFS.tsv
+            fi
+          done
+          (cd handoff-out/history && zip -q -9 ../PROJECT_HISTORY_SOURCES.zip ./*)
+          git rev-parse HEAD > handoff-out/LATEST_COMMIT.txt
+          sha256sum handoff-out/PROJECT_CURRENT_SOURCE.zip handoff-out/PROJECT_HISTORY_SOURCES.zip > handoff-out/SHA256SUMS.txt
+      - name: Upload source snapshots for project transfer
+        uses: actions/upload-artifact@v4
+        with:
+          name: PROJECT_HANDOFF_GITHUB_SOURCES
+          path: handoff-out/
+          if-no-files-found: error
