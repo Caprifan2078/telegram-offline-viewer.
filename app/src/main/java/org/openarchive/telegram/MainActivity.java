@@ -227,7 +227,7 @@ public class MainActivity extends Activity {
         getPreferences(MODE_PRIVATE).edit().putInt("read_offset_"+activeKey,approx).apply();
     }
     private void checkAutoFloat(){
-        if(player==null||inlineHolder==null||floatingPanel!=null||!screen.equals("chat"))return;
+        if(player==null||inlineHolder==null||floatingPanel!=null||!screen.equals("chat")||!player.isPlaying())return;
         int[] p=new int[2],viewport=new int[2];inlineHolder.getLocationOnScreen(p);scroll.getLocationOnScreen(viewport);
         if(p[1]+inlineHolder.getHeight()<viewport[1]||p[1]>viewport[1]+scroll.getHeight()){
             if(playingAttachment!=null&&playingAttachment.kind.equals("round")){
@@ -881,6 +881,7 @@ public class MainActivity extends Activity {
         });
     }
     private void openMedia(MessageDb.Attachment a){
+        if(a.kind.equals("image")||a.kind.equals("sticker")||a.kind.equals("gif")){openPhotoGallery(a);return;}
         if(a.kind.equals("round")){showFloatingRound(a);return;}
         if(a.kind.equals("video"))resolveMedia(a.path,this::fullVideo);
         else if(a.kind.equals("voice")||a.kind.equals("audio"))resolveMedia(a.path,uri->external(uri,a.path));
@@ -931,7 +932,6 @@ public class MainActivity extends Activity {
     }
     /** TextureView lets Android crop video to a true circle while the SeekBar remains outside it. */
     private void startInlineRound(String path,FrameLayout holder,ImageView poster,TextView overlay){
-        inlineHolder=holder;
         if(player!=null&&path.equals(playingPath)){
             try{
                 if(player.isPlaying()){player.pause();overlay.setVisibility(View.VISIBLE);}
@@ -940,10 +940,12 @@ public class MainActivity extends Activity {
             return;
         }
         stopPlayback();
+        inlineHolder=holder;
         RoundControls controls=holder.getTag() instanceof RoundControls?(RoundControls)holder.getTag():null;
         if(controls!=null)activeRound=controls;
         resolveMedia(path,uri->{
             playingPath=path;
+            inlineHolder=holder;
             TextureView texture=new TextureView(this);activeTexture=texture;
             holder.addView(texture,1,new FrameLayout.LayoutParams(-1,-1));
             overlay.bringToFront();
