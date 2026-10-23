@@ -40,6 +40,7 @@ class DocumentFolder {
         }
         return result;
     }
+    String rootId(){ return rootId; }
     Uri uriFor(String id) { return localRoot!=null?Uri.fromFile(new java.io.File(id)):DocumentsContract.buildDocumentUriUsingTree(tree,id); }
     List<Entry> htmlParts() {
         List<Entry> parts=new ArrayList<>();
