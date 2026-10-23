@@ -16,4 +16,4 @@ android {
     }
 }
 
-dependencies { implementation 'org.jsoup:jsoup:1.21.2'; implementation 'com.github.junrar:junrar:7.5.5' }
+dependencies { implementation 'org.jsoup:jsoup:1.21.2'; implementation 'com.github.junrar:junrar:8.1.2' }
