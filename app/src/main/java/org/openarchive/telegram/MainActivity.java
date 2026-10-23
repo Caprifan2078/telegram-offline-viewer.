@@ -63,6 +63,7 @@ import java.util.UUID;
 import android.widget.MediaController;
 import android.webkit.MimeTypeMap;
 import java.io.InputStream;
+import android.content.SharedPreferences;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashMap;
@@ -99,7 +100,7 @@ public class MainActivity extends Activity {
     private String screen="chat",mediaKind="all",q="",byAuthor="",mine="",returnScreen="";
     private boolean deep=false,onlyMedia=false,importing=false;
     private int chatOffset=0,searchOffset=0,mediaOffset=0,favOffset=0,total=0,loadToken=0;
-    private long highlightId=-1;
+    private long highlightId=-1;private long lastVisibleMessage=-1;private int lastVisibleTop=0;private final Map<Long,View> renderedMessageViews=new HashMap<>();private long pendingRestoreId=-1;private int pendingRestoreTop=0;private boolean restoringBackup=false;
     private String info="";
     private MediaPlayer player;private String playingPath="";private TextureView activeTexture;
     private Runnable progressUpdater;private MessageDb.Attachment playingAttachment;private LinearLayout playerStrip;private TextView playerText;private Button playerPause;private FrameLayout inlineHolder;private int floatingStart=0;
@@ -210,8 +211,14 @@ public class MainActivity extends Activity {
         });
     }
     private void saveReadingProgress(){
+        if(lastVisibleMessage>0&&activeKey!=null){getPreferences(MODE_PRIVATE).edit().putLong("read_id_"+activeKey,lastVisibleMessage).putInt("read_top_"+activeKey,lastVisibleTop).apply();}
         if(home||!screen.equals("chat")||scroll==null||list==null)return;
         int child=0;int y=scroll.getScrollY();
+        for(Map.Entry<Long,View> entry:renderedMessageViews.entrySet()){
+            View v=entry.getValue();if(v.getTop()<=y+px(115)&&v.getBottom()>y+px(115)){
+                lastVisibleMessage=entry.getKey();lastVisibleTop=v.getTop()-y;break;
+            }
+        }
         for(int i=0;i<list.getChildCount();i++){
             View view=list.getChildAt(i);
             if(view.getBottom()>y){child=i;break;}
@@ -251,7 +258,11 @@ public class MainActivity extends Activity {
         if(choice==null)return;closeFloatingRound();stopPlayback();++loadToken;activeKey=key;activeName=choice.optString("name","Архив");saveRegistry();
         if(db!=null)db.close();db=new MessageDb(this,activeKey);
         String path=choice.optString("tree","");folder=path.isEmpty()?null:new DocumentFolder(getContentResolver(),Uri.parse(path));
-        chatOffset=searchOffset=mediaOffset=favOffset=0;autoLoaded=PAGE;home=false;screen="chat";returnScreen="";chatOffset=getPreferences(MODE_PRIVATE).getInt("read_offset_"+activeKey,0);showPage();
+        chatOffset=searchOffset=mediaOffset=favOffset=0;autoLoaded=PAGE;home=false;screen="chat";returnScreen="";chatOffset=getPreferences(MODE_PRIVATE).getInt("read_offset_"+activeKey,0);
+        pendingRestoreId=getPreferences(MODE_PRIVATE).getLong("read_id_"+activeKey,-1);
+        pendingRestoreTop=getPreferences(MODE_PRIVATE).getInt("read_top_"+activeKey,0);
+        if(pendingRestoreId>0)worker.execute(()->{int pos=db.positionFor(pendingRestoreId);runOnUiThread(()->{chatOffset=Math.max(0,pos-3);showPage();});});
+        else showPage();
     }
     private void chatPicker(){
         String[] labels=new String[archives.length()+1];for(int i=0;i<archives.length();i++){JSONObject o=archives.optJSONObject(i);labels[i]=o==null?"Чат":o.optString("name","Чат");}
@@ -499,6 +510,9 @@ public class MainActivity extends Activity {
     @Override public void onBackPressed(){if(screen.equals("saved")||(!home&&returnScreen.isEmpty())){saveReadingProgress();home=true;screen="chat";bottomNav.setVisibility(View.VISIBLE);showPage();return;}if(!returnScreen.isEmpty()){restoreReturn();return;}super.onBackPressed();}
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
+        if((request==41||request==42)&&result==RESULT_OK&&data!=null&&data.getData()!=null){
+            backupAction(data.getData(),request==42);return;
+        }
         if(request==28&&result==RESULT_OK&&data!=null&&data.getData()!=null){
             Uri uri=data.getData();
             try{getContentResolver().takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Exception ignored){}
@@ -595,6 +609,7 @@ public class MainActivity extends Activity {
     }
     private void renderMessages(List<MessageDb.Item> messages,Map<Long,List<MessageDb.Attachment>> files,boolean results,boolean append){
         if(messages.isEmpty())return;
+        if(!append)renderedMessageViews.clear();
         String last=append?lastRenderedDay:"";View focus=null;View glowBubble=null;int glowBase=0;long glowId=-1;
         for(MessageDb.Item m:messages){
             String date=day(m.date);if(!date.equals(last)){dateSeparator(date);last=date;}
@@ -608,7 +623,7 @@ public class MainActivity extends Activity {
             int chosenColor=authorColor(m.author);
             bubble.setBackground(gradient(m.id==highlightId?0xff477c91:chosenColor,
                     m.id==highlightId?0xff33576b:darken(chosenColor),17));
-            if(m.id==highlightId){glowBubble=bubble;glowBase=chosenColor;glowId=m.id;}
+            if(m.id==highlightId){glowBubble=bubble;glowBase=chosenColor;glowId=m.id;line.setBackground(shape(0x443ad0fc,12));}
             LinearLayout.LayoutParams bp=p(-2,-2);line.addView(bubble,bp);
             int maxWidth=getResources().getDisplayMetrics().widthPixels-px(93);
             if(maxWidth<px(190))maxWidth=px(240);final int mw=maxWidth;
@@ -631,10 +646,17 @@ public class MainActivity extends Activity {
                 open.setOnClickListener(v->jump(m.id,"search"));
                 bubble.setOnClickListener(v->jump(m.id,"search"));
             }
+            renderedMessageViews.put(m.id,line);
             if(m.id==highlightId)focus=line;
         }
         lastRenderedDay=last;
         if(append)return; // Never jump to the top when more history is appended.
+        if(pendingRestoreId>0){
+            final View restored=renderedMessageViews.get(pendingRestoreId);
+            final int top=pendingRestoreTop;
+            pendingRestoreId=-1;
+            if(restored!=null){scroll.post(()->scroll.scrollTo(0,Math.max(0,restored.getTop()-top)));return;}
+        }
         final View target=focus;
         final View targetBubble=glowBubble;
         final int color=glowBase;
@@ -1083,9 +1105,41 @@ public class MainActivity extends Activity {
         });
     }
     private void settingsMenu(){new AlertDialog.Builder(this).setTitle("Настройки").setItems(
-       new String[]{"Моё имя (сообщения справа)","Цвета участников","Мои архивы"},(d,i)->{
-          if(i==0)identityDialog();else if(i==1)participantSettings();else chatPicker();
+       new String[]{"Моё имя (сообщения справа)","Цвета участников","Мои архивы","Создать резервную копию","Восстановить резервную копию"},(d,i)->{
+          if(i==0)identityDialog();else if(i==1)participantSettings();else if(i==2)chatPicker();
+          else if(i==3)backupPicker();else restorePicker();
        }).show();}
+    private void backupPicker(){
+        new AlertDialog.Builder(this).setTitle("Резервная копия").setMessage("В ZIP сохраняются тексты всех чатов, избранные и закреплённые сообщения, заметки и настройки. Видео, фото и аудио не копируются: исходные папки Telegram нужно хранить отдельно. Копия не шифруется — сохраняй её в надёжном месте.")
+            .setNegativeButton("Отмена",null).setPositiveButton("Выбрать место",(d,w)->{
+                Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.setType("application/zip");i.addCategory(Intent.CATEGORY_OPENABLE);
+                i.putExtra(Intent.EXTRA_TITLE,"TelegramArchive-backup.zip");startActivityForResult(i,41);
+            }).show();
+    }
+    private void restorePicker(){
+        new AlertDialog.Builder(this).setTitle("Восстановление").setMessage("Архивы добавятся как новые, существующие чаты, избранное и закрепления сохранятся. Для медиа понадобится заново выбрать исходные папки. Используй только доверенные копии.")
+            .setNegativeButton("Отмена",null).setPositiveButton("Выбрать ZIP",(d,w)->{
+                Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("application/zip");i.addCategory(Intent.CATEGORY_OPENABLE);
+                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivityForResult(i,42);
+            }).show();
+    }
+    private void backupAction(Uri uri,boolean restore){
+        if(restoringBackup||importing)return;restoringBackup=true;
+        status.setText(restore?"Восстанавливаю…":"Создаю резервную копию…");
+        worker.execute(()->{
+            try{
+                SharedPreferences prefs=getPreferences(MODE_PRIVATE);
+                if(restore){
+                    int chats=ArchiveBackup.restore(this,prefs,uri,message->runOnUiThread(()->status.setText(message)));
+                    runOnUiThread(()->{restoringBackup=false;loadArchiveRegistry();home=true;screen="chat";showPage();toast("Восстановлено чатов: "+chats);});
+                }else{
+                    saveReadingProgress();
+                    ArchiveBackup.write(this,prefs,uri,message->runOnUiThread(()->status.setText(message)));
+                    runOnUiThread(()->{restoringBackup=false;toast("Резервная копия сохранена");});
+                }
+            }catch(Exception e){runOnUiThread(()->{restoringBackup=false;status.setText("Ошибка резервной копии: "+e.getMessage());});}
+        });
+    }
     private final class VerticalTimeline extends View {
        private final Paint brush=new Paint(3);private int position,count;
        VerticalTimeline(){super(MainActivity.this);}
