@@ -153,6 +153,21 @@ final class FullBackup {
                 if(!media.isDirectory()&&!media.mkdirs())throw new IOException("Отсутствует папка медиа для чата "+i);
                 record.put("tree","local:"+media.getAbsolutePath());
             }
+            File assets=new File(staging,"custom");
+            File destination=new File(ctx.getFilesDir(),"personal_images");
+            if(assets.isDirectory()){
+                if(!destination.isDirectory()&&!destination.mkdirs())throw new IOException("Нет каталога аватаров");
+                File[] files=assets.listFiles();
+                if(files!=null)for(File item:files){
+                    if(!item.isFile()||!item.getName().matches("[a-zA-Z0-9_-]{1,96}\\.jpg"))continue;
+                    File target=new File(destination,item.getName());
+                    if(!target.exists()){
+                        try(InputStream in=new FileInputStream(item);OutputStream out=new FileOutputStream(target)){
+                            stream(in,out,20*1024*1024);
+                        }
+                    }
+                }
+            }
             if(!prefs.edit().putString("archive_registry",all.toString()).commit())
                 throw new IOException("Не удалось зарегистрировать восстановленные медиа");
             complete=true;return restored;
