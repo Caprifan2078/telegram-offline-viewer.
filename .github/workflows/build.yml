@@ -1,4 +1,4 @@
-name: Build Telegram Archive v0.25 APK — archive and dock verification
+name: Build Telegram Archive v0.25 APK — final regression with avatars, backups and audio
 on:
   push:
     branches: [main, feat/v025-safe-backup-avatar-wallpaper]
