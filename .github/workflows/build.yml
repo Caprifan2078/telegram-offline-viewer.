@@ -41,7 +41,21 @@ jobs:
             adb wait-for-device
             adb shell settings put global verifier_verify_adb_installs 0
             adb shell input keyevent 82
+            set +e
             gradle connectedDebugAndroidTest --no-daemon --stacktrace
+            outcome=$?
+            echo "=== SYNTHETIC TELEGRAM BENCHMARKS ==="
+            adb logcat -d -s TG_ARCHIVE_BENCH:I | tail -n 35 || true
+            exit $outcome
+      - name: Upload instrumentation test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Telegram-Archive-v0.23-TestResults
+          path: |
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+          if-no-files-found: ignore
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
