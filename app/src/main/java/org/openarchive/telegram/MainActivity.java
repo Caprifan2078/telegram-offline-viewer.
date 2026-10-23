@@ -64,6 +64,8 @@ import java.util.UUID;
 import android.widget.MediaController;
 import android.webkit.MimeTypeMap;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.IOException;
 import android.content.SharedPreferences;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -1429,15 +1431,8 @@ public class MainActivity extends Activity {
                     BackupVerifier.Result verified=BackupVerifier.verify(this,uri,password,msg->runOnUiThread(()->status.setText(msg)));
                     int restored;
                     try(InputStream source=SecureArchive.openInput(this,uri,password)){
-                        java.io.BufferedInputStream buf=new java.io.BufferedInputStream(source,128*1024);
-                        buf.mark(256);
-                        java.util.zip.ZipInputStream peek=new java.util.zip.ZipInputStream(buf);
-                        java.util.zip.ZipEntry first=peek.getNextEntry();
-                        boolean full=first!=null&&"metadata.zip".equals(first.getName());
-                    }
-                    try(InputStream source=SecureArchive.openInput(this,uri,password)){
                         java.io.BufferedInputStream buffered=new java.io.BufferedInputStream(source,128*1024);
-                        buffered.mark(256);
+                        buffered.mark(131072);
                         java.util.zip.ZipInputStream preview=new java.util.zip.ZipInputStream(buffered);
                         java.util.zip.ZipEntry entry=preview.getNextEntry();
                         boolean full=entry!=null&&"metadata.zip".equals(entry.getName());
@@ -1458,7 +1453,7 @@ public class MainActivity extends Activity {
                 }
             }catch(Exception error){
                 runOnUiThread(()->{restoringBackup=false;status.setText("Ошибка: "+error.getMessage());});
-            }finally{if(password!=null)java.util.Arrays.fill(password,'\0');}
+            }finally{if(password!=null)java.util.Arrays.fill(password,(char)0);}
         });
     }
     private final class VerticalTimeline extends View {
