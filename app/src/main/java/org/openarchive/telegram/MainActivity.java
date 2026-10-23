@@ -173,7 +173,7 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("Фон переписки")
             .setSingleChoiceItems(choices,wallpaperIndex,(dialog,idx)->{
                 if(idx==4){dialog.dismiss();pickPersonalImage(60);return;}
-                getPreferences(MODE_PRIVATE).edit().putInt("appearance_wallpaper",idx).apply();
+                getPreferences(MODE_PRIVATE).edit().putInt("appearance_wallpaper",idx).remove(PersonalImages.wallpaperKey(activeKey)).apply();
                 wallpaperIndex=idx;dialog.dismiss();opacityDialog();
             }).setNeutralButton("Прозрачность",(d,w)->opacityDialog()).setPositiveButton("Готово",null).show();
     }
@@ -341,7 +341,10 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams margins=p(-1,76);margins.setMargins(px(2),px(3),px(2),px(7));list.addView(item,margins);
             String letter=name.isEmpty()?"?":name.substring(0,1).toUpperCase(Locale.ROOT);
             TextView avatar=text(letter,23,FG);avatar.setTypeface(null,Typeface.BOLD);avatar.setGravity(Gravity.CENTER);
-            avatar.setBackground(gradient(participantColors[i%participantColors.length],0xff294968,100));item.addView(avatar,p(51,51));
+            avatar.setBackground(gradient(participantColors[i%participantColors.length],0xff294968,100));
+            Bitmap picture=PersonalImages.load(this,getPreferences(MODE_PRIVATE).getString(PersonalImages.chatAvatarKey(key),""));
+            if(picture!=null){avatar.setText("");avatar.setBackground(new android.graphics.drawable.BitmapDrawable(getResources(),PersonalImages.circular(picture,px(51))));}
+            item.addView(avatar,p(51,51));
             LinearLayout info=column();info.setPadding(px(14),0,0,0);item.addView(info,new LinearLayout.LayoutParams(0,-2,1));
             TextView nameLabel=text(name,16,FG);nameLabel.setTypeface(null,Typeface.BOLD);nameLabel.setSingleLine(true);
             nameLabel.setEllipsize(TextUtils.TruncateAt.END);info.addView(nameLabel);
