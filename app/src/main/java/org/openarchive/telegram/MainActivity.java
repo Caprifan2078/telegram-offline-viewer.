@@ -97,6 +97,14 @@ public class MainActivity extends Activity {
     private String info="";
     private MediaPlayer player;private String playingPath="";private TextureView activeTexture;
     private Runnable progressUpdater;
+    private RoundControls activeRound;
+    private static final class RoundControls {
+        SeekBar seek;
+        TextView timer;
+        ImageView preview;
+        TextView overlay;
+        boolean dragging=false,wasPlaying=false;
+    }
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
@@ -539,26 +547,67 @@ public class MainActivity extends Activity {
         file.setOnLongClickListener(v->{mediaActions(a);return true;});return file;
     }
     private String filename(String path){int p=path.lastIndexOf('/');return p<0?path:path.substring(p+1);}
+    /** Tap: expand and play in-chat; tap again: pause/resume. Drag the bar to seek. */
     private View circle(MessageDb.Attachment a,int size,boolean chatCircle){
-        FrameLayout container=new FrameLayout(this);container.setBackground(shape(0xff31526c,100));
-        ViewOutlineProvider round=new ViewOutlineProvider(){@Override public void getOutline(View v,Outline o){o.setOval(0,0,v.getWidth(),v.getHeight());}};
-        container.setOutlineProvider(round);container.setClipToOutline(true);
-        ImageView thumbnail=new ImageView(this);thumbnail.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        container.addView(thumbnail,new FrameLayout.LayoutParams(-1,-1));loadThumbnail(a.path,"round",thumbnail);
-        TextView overlay=text("▶",size>100?37:27,FG);overlay.setGravity(Gravity.CENTER);
-        overlay.setBackgroundColor(0x42000000);container.addView(overlay,new FrameLayout.LayoutParams(-1,-1));
+        FrameLayout holder=new FrameLayout(this);holder.setBackground(shape(0xff31526c,100));
+        holder.setOutlineProvider(new ViewOutlineProvider(){
+            @Override public void getOutline(View v,Outline o){o.setOval(0,0,v.getWidth(),v.getHeight());}
+        });holder.setClipToOutline(true);
+        ImageView preview=new ImageView(this);preview.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        holder.addView(preview,new FrameLayout.LayoutParams(-1,-1));loadThumbnail(a.path,"round",preview);
+        TextView overlay=text("▶",size>130?38:28,FG);overlay.setGravity(Gravity.CENTER);
+        overlay.setBackgroundColor(0x38000000);holder.addView(overlay,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout wrap=column();wrap.setGravity(Gravity.CENTER_HORIZONTAL);
-        container.setOnClickListener(v->{
-            if(chatCircle&&container.getLayoutParams()!=null&&container.getLayoutParams().width<px(232)){
-                int dim=Math.min(252,(getResources().getDisplayMetrics().widthPixels/Math.max(1,px(1)))-110);
-                container.setLayoutParams(p(dim,dim));wrap.requestLayout();
+        wrap.addView(holder,p(size,size));
+        TextView duration=text("00:00",12,SUB);duration.setGravity(Gravity.CENTER);wrap.addView(duration,p(size,24));
+        loadDuration(a.path,duration);
+        RoundControls controls=new RoundControls();
+        controls.timer=duration;controls.preview=preview;controls.overlay=overlay;
+        if(chatCircle){
+            SeekBar seek=new SeekBar(this);seek.setMax(1000);seek.setProgress(0);
+            seek.setVisibility(View.GONE);wrap.addView(seek,p(size,34));controls.seek=seek;
+            seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+                @Override public void onStartTrackingTouch(SeekBar bar){
+                    controls.dragging=true;controls.wasPlaying=false;
+                    try{if(player!=null&&a.path.equals(playingPath)){
+                        controls.wasPlaying=player.isPlaying();if(controls.wasPlaying)player.pause();
+                    }}catch(Exception ignored){}
+                }
+                @Override public void onProgressChanged(SeekBar bar,int value,boolean user){
+                    if(!user)return;
+                    try{if(player!=null&&a.path.equals(playingPath)){
+                        int length=Math.max(0,player.getDuration());
+                        duration.setText(formatTime(Math.round(length*value/1000f)/1000)+" / "+formatTime(length/1000));
+                    }}catch(Exception ignored){}
+                }
+                @Override public void onStopTrackingTouch(SeekBar bar){
+                    try{if(player!=null&&a.path.equals(playingPath)){
+                        int length=Math.max(0,player.getDuration());
+                        player.seekTo(Math.round(length*bar.getProgress()/1000f));
+                        if(controls.wasPlaying){player.start();overlay.setVisibility(View.GONE);}
+                    }}catch(Exception e){toast("Не удалось перемотать видео");}
+                    controls.dragging=false;
+                }
+            });
+        }
+        holder.setTag(controls);
+        holder.setOnClickListener(v->{
+            if(chatCircle){
+                int max=(int)(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density)-105;
+                int enlarged=Math.max(size,Math.min(260,max));
+                if(holder.getLayoutParams().width<px(enlarged)){
+                    holder.setLayoutParams(p(enlarged,enlarged));duration.setLayoutParams(p(enlarged,25));
+                }
+                if(controls.seek!=null){
+                    controls.seek.setVisibility(View.VISIBLE);
+                    controls.seek.setLayoutParams(p(enlarged,35));
+                }
+                wrap.requestLayout();
             }
-            startInlineRound(a.path,container,thumbnail,overlay);
+            startInlineRound(a.path,holder,preview,overlay);
         });
-        container.setOnLongClickListener(v->{mediaActions(a);return true;});
-        wrap.addView(container,p(size,size));
-        TextView duration=text("00:00",11,SUB);duration.setGravity(Gravity.CENTER);wrap.addView(duration,p(size,23));
-        loadDuration(a.path,duration);return wrap;
+        holder.setOnLongClickListener(v->{mediaActions(a);return true;});
+        return wrap;
     }
     private View voice(MessageDb.Attachment a,boolean gallery){
         LinearLayout outer=column();outer.setBackground(shape(CHIP,14));outer.setPadding(px(8),px(5),px(8),px(5));
@@ -642,39 +691,91 @@ public class MainActivity extends Activity {
     }
     private void stopPlayback(){
         if(progressUpdater!=null){handler.removeCallbacks(progressUpdater);progressUpdater=null;}
-        if(player!=null){try{player.stop();}catch(Exception ignored){}try{player.release();}catch(Exception ignored){}player=null;}
-        activeTexture=null;playingPath="";
+        if(player!=null){
+            try{player.stop();}catch(Exception ignored){}
+            try{player.release();}catch(Exception ignored){}
+            player=null;
+        }
+        if(activeTexture!=null){
+            ViewGroup parent=activeTexture.getParent() instanceof ViewGroup?(ViewGroup)activeTexture.getParent():null;
+            if(parent!=null)parent.removeView(activeTexture);
+            activeTexture=null;
+        }
+        if(activeRound!=null){
+            activeRound.preview.setVisibility(View.VISIBLE);
+            activeRound.overlay.setVisibility(View.VISIBLE);
+            if(activeRound.seek!=null)activeRound.seek.setProgress(0);
+            activeRound=null;
+        }
+        playingPath="";
     }
-    /** TextureView rather than SurfaceView allows a genuinely round clipping mask. */
+    /** TextureView lets Android crop video to a true circle while the SeekBar remains outside it. */
     private void startInlineRound(String path,FrameLayout holder,ImageView poster,TextView overlay){
         if(player!=null&&path.equals(playingPath)){
-            try{if(player.isPlaying()){player.pause();overlay.setVisibility(View.VISIBLE);}else{player.start();overlay.setVisibility(View.GONE);}}catch(Exception ignored){}
+            try{
+                if(player.isPlaying()){player.pause();overlay.setVisibility(View.VISIBLE);}
+                else{player.start();overlay.setVisibility(View.GONE);}
+            }catch(Exception ignored){}
             return;
         }
-        stopPlayback();resolveMedia(path,uri->{
-            playingPath=path;TextureView texture=new TextureView(this);activeTexture=texture;
-            FrameLayout.LayoutParams params=new FrameLayout.LayoutParams(-1,-1);
-            holder.addView(texture,1,params);overlay.bringToFront();
+        stopPlayback();
+        RoundControls controls=holder.getTag() instanceof RoundControls?(RoundControls)holder.getTag():null;
+        if(controls!=null)activeRound=controls;
+        resolveMedia(path,uri->{
+            playingPath=path;
+            TextureView texture=new TextureView(this);activeTexture=texture;
+            holder.addView(texture,1,new FrameLayout.LayoutParams(-1,-1));
+            overlay.bringToFront();
             texture.setSurfaceTextureListener(new TextureView.SurfaceTextureListener(){
                 @Override public void onSurfaceTextureAvailable(SurfaceTexture surface,int w,int h){
                     if(!path.equals(playingPath))return;
                     try{
-                        MediaPlayer p=new MediaPlayer();player=p;Surface screenSurface=new Surface(surface);
-                        p.setSurface(screenSurface);screenSurface.release();p.setDataSource(MainActivity.this,uri);
-                        p.setLooping(true);
-                        p.setOnPreparedListener(mp->{if(mp!=player)return;
-                            Matrix transform=new Matrix();float vw=Math.max(1,mp.getVideoWidth()),vh=Math.max(1,mp.getVideoHeight());
-                            float scale=Math.max(w/vw,h/vh);float sx=vw*scale/w,sy=vh*scale/h;
-                            transform.setScale(sx,sy,w/2f,h/2f);texture.setTransform(transform);
+                        MediaPlayer p=new MediaPlayer();player=p;
+                        Surface screenSurface=new Surface(surface);
+                        p.setSurface(screenSurface);screenSurface.release();
+                        p.setDataSource(MainActivity.this,uri);p.setLooping(true);
+                        p.setOnPreparedListener(mp->{
+                            if(mp!=player)return;
+                            Matrix transform=new Matrix();
+                            float vw=Math.max(1,mp.getVideoWidth()),vh=Math.max(1,mp.getVideoHeight());
+                            float scale=Math.max(w/vw,h/vh);
+                            transform.setScale(vw*scale/w,vh*scale/h,w/2f,h/2f);
+                            texture.setTransform(transform);
                             overlay.setVisibility(View.GONE);poster.setVisibility(View.INVISIBLE);mp.start();
+                            if(controls!=null){
+                                controls.timer.setText("0:00 / "+formatTime(Math.max(0,mp.getDuration()/1000)));
+                                progressUpdater=new Runnable(){
+                                    @Override public void run(){
+                                        if(player!=mp)return;
+                                        try{
+                                            int current=Math.max(0,mp.getCurrentPosition());
+                                            int length=Math.max(1,mp.getDuration());
+                                            if(!controls.dragging){
+                                                if(controls.seek!=null)
+                                                    controls.seek.setProgress(Math.min(1000,Math.round(1000f*current/length)));
+                                                controls.timer.setText(formatTime(current/1000)+" / "+formatTime(length/1000));
+                                            }
+                                            handler.postDelayed(this,250);
+                                        }catch(Exception ignored){}
+                                    }
+                                };
+                                handler.post(progressUpdater);
+                            }
                         });
-                        p.setOnErrorListener((mp,what,extra)->{toast("Видео не запустилось. Удержи видео-сообщение → открой полностью.");stopPlayback();overlay.setVisibility(View.VISIBLE);return true;});
+                        p.setOnErrorListener((mp,what,extra)->{
+                            toast("Не удалось воспроизвести видео-сообщение. Удержи для полного экрана.");
+                            stopPlayback();overlay.setVisibility(View.VISIBLE);return true;
+                        });
                         p.prepareAsync();
-                    }catch(Exception e){stopPlayback();overlay.setVisibility(View.VISIBLE);toast("Ошибка воспроизведения");}
+                    }catch(Exception e){
+                        stopPlayback();overlay.setVisibility(View.VISIBLE);toast("Ошибка воспроизведения MP4");
+                    }
                 }
-                @Override public void onSurfaceTextureSizeChanged(SurfaceTexture s,int w,int h){}
-                @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture s){if(activeTexture==texture)stopPlayback();return true;}
-                @Override public void onSurfaceTextureUpdated(SurfaceTexture s){}
+                @Override public void onSurfaceTextureSizeChanged(SurfaceTexture surface,int w,int h){}
+                @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture surface){
+                    if(activeTexture==texture)stopPlayback();return true;
+                }
+                @Override public void onSurfaceTextureUpdated(SurfaceTexture surface){}
             });
         });
     }
