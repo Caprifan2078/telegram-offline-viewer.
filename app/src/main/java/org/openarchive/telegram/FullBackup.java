@@ -134,7 +134,7 @@ final class FullBackup {
             for(int i=0;i<restored;i++){
                 JSONObject record=all.getJSONObject(oldCount+i);
                 File media=new File(staging,"media/chat-"+i);
-                if(!media.isDirectory())throw new IOException("Отсутствует папка медиа для чата "+i);
+                if(!media.isDirectory()&&!media.mkdirs())throw new IOException("Отсутствует папка медиа для чата "+i);
                 record.put("tree","local:"+media.getAbsolutePath());
             }
             if(!prefs.edit().putString("archive_registry",all.toString()).commit())
