@@ -234,7 +234,7 @@ public class MainActivity extends Activity {
         sideMenuItem(pane,"▧  Фон переписки","Узоры и прозрачность",()->{dialog.dismiss();wallpaperDialog();});
         sideMenuItem(pane,"⚙  Настройки","Имя, цвета участников и другое",()->{dialog.dismiss();settingsMenu();});
         View gap=new View(this);pane.addView(gap,new LinearLayout.LayoutParams(1,0,1));
-        TextView label=text("Telegram Archive  ·  v"+"0.22-beta"+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
+        TextView label=text("Telegram Archive  ·  v"+"0.23-beta"+"\nЛокально · Без аккаунта · Без серверов",11,SUB);
         label.setPadding(px(4),px(16),0,px(12));pane.addView(label);
         overlay.setOnClickListener(v->dialog.dismiss());pane.setOnClickListener(v->{});
         dialog.setContentView(overlay);dialog.show();Window w=dialog.getWindow();if(w!=null)w.setLayout(-1,-1);
@@ -1297,21 +1297,24 @@ public class MainActivity extends Activity {
 
     private void openPhotoGallery(MessageDb.Attachment initial){
         Dialog dialog=new Dialog(this,android.R.style.Theme_Black_NoTitleBar_Fullscreen);
-        FrameLayout frame=new FrameLayout(this);frame.setBackgroundColor(0xff090e16);
+        FrameLayout frame=new FrameLayout(this);frame.setBackground(gradient(0xff080f1d,0xff162336,16));
         ImageView picture=new ImageView(this);picture.setScaleType(ImageView.ScaleType.FIT_CENTER);
         frame.addView(picture,new FrameLayout.LayoutParams(-1,-1));
-        TextView caption=text("Фото",14,FG);caption.setGravity(Gravity.CENTER);
+        TextView caption=text("Фото",14,0xfff1f8ff);caption.setGravity(Gravity.CENTER);
+        caption.setBackground(shape(0xaa17293e,13));
         frame.addView(caption,new FrameLayout.LayoutParams(-1,px(52),Gravity.TOP));
         Button close=btn("✕");frame.addView(close,new FrameLayout.LayoutParams(px(48),px(48),Gravity.TOP|Gravity.END));
         close.setOnClickListener(v->dialog.dismiss());
         HorizontalScrollView strip=new HorizontalScrollView(this);strip.setHorizontalScrollBarEnabled(false);
-        LinearLayout thumbsRow=row();thumbsRow.setPadding(px(4),px(4),px(4),px(4));strip.addView(thumbsRow);
+        LinearLayout thumbsRow=row();thumbsRow.setPadding(px(4),px(4),px(4),px(4));
+        thumbsRow.setBackground(shape(0x9916263a,16));strip.addView(thumbsRow);
         FrameLayout.LayoutParams film=new FrameLayout.LayoutParams(-1,px(83),Gravity.BOTTOM);frame.addView(strip,film);
         final MessageDb.Attachment[] current={initial};
         final int[] generation={0};
         final java.util.function.Consumer<MessageDb.Attachment>[] show=new java.util.function.Consumer[1];
         show[0]=item->{
             current[0]=item;int id=++generation[0];picture.setScaleX(1f);picture.setScaleY(1f);
+            picture.animate().cancel();picture.setImageDrawable(null);
             caption.setText(day(item.date)+" · "+(item.author==null?"Фото":item.author));
             DocumentFolder source=folder;
             if(source==null)return;
@@ -1333,7 +1336,7 @@ public class MainActivity extends Activity {
                     if(id!=generation[0]||!dialog.isShowing())return;
                     picture.animate().cancel();picture.setAlpha(0f);picture.setTranslationX(px(12));
                     if(loaded!=null)picture.setImageBitmap(loaded);
-                    picture.animate().alpha(1f).translationX(0).setDuration(230).setInterpolator(new DecelerateInterpolator()).start();
+                    picture.animate().alpha(1f).translationX(0).setDuration(motionDuration(260)).setInterpolator(new DecelerateInterpolator()).start();
                 });
             });
             worker.execute(()->{
@@ -1354,6 +1357,7 @@ public class MainActivity extends Activity {
                         loadThumbnail(photo.path,"image",thumb);
                         thumb.setOnClickListener(v->show[0].accept(photo));
                     }
+                    thumbsRow.setAlpha(0.45f);thumbsRow.animate().alpha(1f).setDuration(motionDuration(240)).start();
                     strip.post(()->strip.smoothScrollTo(Math.max(0,(older.size()-2)*px(71)),0));
                 });
             });
