@@ -1,0 +1,68 @@
+--- a/app/src/main/java/org/openarchive/telegram/ArchiveBackup.java
++++ b/app/src/main/java/org/openarchive/telegram/ArchiveBackup.java
+@@ -214,6 +214,7 @@
+             localNotes.beginTransaction();
+             try{
+                 SQLiteDatabase other=SQLiteDatabase.openDatabase(files.get(notes.getString("file")).getAbsolutePath(),null,SQLiteDatabase.OPEN_READONLY);
++                try{
+                 boolean hasOrigin=false;
+                 try(Cursor col=other.rawQuery("PRAGMA table_info(saved_notes)",null)){
+                     while(col.moveToNext())if("origin_archive".equals(col.getString(1)))hasOrigin=true;
+--- a/app/src/main/java/org/openarchive/telegram/MainActivity.java
++++ b/app/src/main/java/org/openarchive/telegram/MainActivity.java
+@@ -2694,8 +2694,8 @@
+                 tile.addView(image,new FrameLayout.LayoutParams(-1,-1));
+                 if("sticker".equals(a.kind)&&isTgsPath(a.path)){
+                     loadTgsPreview(a.path,tile);
+-                }else loadThumbnail(a.path,a.kind,image);
+-                if(a.kind.equals("video")||a.kind.equals("gif")&&a.path.toLowerCase(Locale.ROOT).matches(".*\\.(mp4|webm|m4v)(\\?.*)?$")){
++                }else loadThumbnail(a.path,isVideoStickerPath(a.path)?"video":a.kind,image);
++                if(a.kind.equals("video")||isVideoStickerPath(a.path)||a.kind.equals("gif")&&a.path.toLowerCase(Locale.ROOT).matches(".*\\.(mp4|webm|m4v)(\\?.*)?$")){
+                     TextView play=text("▶",25,FG);play.setGravity(Gravity.CENTER);
+                     tile.addView(play,new FrameLayout.LayoutParams(-1,-1));
+                 }
+@@ -2742,8 +2742,8 @@
+             box.addView(image,new FrameLayout.LayoutParams(-1,-1));
+             if("sticker".equals(a.kind)&&isTgsPath(a.path)){
+                 loadTgsPreview(a.path,box);
+-            }else loadThumbnail(a.path,a.kind,image);
+-            if(a.kind.equals("video")||a.kind.equals("gif")&&a.path.toLowerCase(Locale.ROOT).matches(".*\\.(mp4|webm|m4v)(\\?.*)?$")){TextView play=text("▶",27,FG);play.setGravity(Gravity.CENTER);box.addView(play,new FrameLayout.LayoutParams(-1,-1));}
++            }else loadThumbnail(a.path,isVideoStickerPath(a.path)?"video":a.kind,image);
++            if(a.kind.equals("video")||isVideoStickerPath(a.path)||a.kind.equals("gif")&&a.path.toLowerCase(Locale.ROOT).matches(".*\\.(mp4|webm|m4v)(\\?.*)?$")){TextView play=text("▶",27,FG);play.setGravity(Gravity.CENTER);box.addView(play,new FrameLayout.LayoutParams(-1,-1));}
+             box.setOnClickListener(v->openMedia(a));box.setOnLongClickListener(v->{mediaActions(a);return true;});
+             FrameLayout outer=new FrameLayout(this);outer.addView(box,new FrameLayout.LayoutParams(px(size),px(gallery?84:Math.min(280,size))));return outer;
+         }
+@@ -3170,6 +3170,10 @@
+     }
+     private void openMedia(MessageDb.Attachment a){
+         if(a.kind.equals("gif")&&a.path.toLowerCase(Locale.ROOT).matches(".*\\.(mp4|webm|m4v)(\\?.*)?$")){resolveMedia(a.path,this::fullVideo);return;}
++        // Telegram VP9 WebM stickers are short alpha videos, not BitmapFactory images.
++        if("sticker".equals(a.kind)&&isVideoStickerPath(a.path)){
++            resolveMedia(a.path,this::fullVideo);return;
++        }
+         if("sticker".equals(a.kind)&&isTgsPath(a.path)){
+             resolveMedia(a.path,this::openTgsSticker);return;
+         }
+@@ -3182,6 +3186,9 @@
+     /** Static first frame of a local TGS in chat and gallery, with bounded Lottie cache.
+      * Deliberately never runs background looping animations in a scrolling list. */
+     private final LruCache<String,LottieComposition> tgsCompositions=new LruCache<>(10);
++    private boolean isVideoStickerPath(String path){
++        return path!=null&&path.toLowerCase(Locale.ROOT).matches(".*\\.webm(\\?.*)?$");
++    }
+     private boolean isTgsPath(String path){
+         return path!=null&&path.toLowerCase(Locale.ROOT).matches(".*\\.tgs(\\?.*)?$");
+     }
+--- a/app/src/test/java/org/openarchive/telegram/TelegramMediaClassificationRegressionTest.java
++++ b/app/src/test/java/org/openarchive/telegram/TelegramMediaClassificationRegressionTest.java
+@@ -13,6 +13,10 @@
+     @Test public void recognizesAnimatedAndStaticStickersBeforePhoto(){
+         assertEquals("sticker",TelegramImporter.classify("stickers/sticker_1.webp",element("sticker_wrap")));
+         assertEquals("sticker",TelegramImporter.classify("stickers/animated_1.tgs",element("sticker_wrap")));
++    }
++    @Test public void vp9VideoStickerMustRemainStickerNotOrdinaryVideo(){
++        assertEquals("sticker",TelegramImporter.classify("stickers/loop.webm",element("sticker_wrap")));
++        assertEquals("video",TelegramImporter.classify("videos/loop.webm",element("video_wrap")));
+     }
+     @Test public void gifAndVideoHaveDifferentTypes(){
+         assertEquals("gif",TelegramImporter.classify("animations/animation_001.mp4",element("animated")));
