@@ -1,0 +1,232 @@
+--- a/app/src/androidTest/java/org/openarchive/telegram/UiSmokeTest.java
++++ b/app/src/androidTest/java/org/openarchive/telegram/UiSmokeTest.java
+@@ -1,25 +1,53 @@
+ package org.openarchive.telegram;
++
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.TextView;
+ import androidx.test.ext.junit.runners.AndroidJUnit4;
+ import androidx.test.rule.ActivityTestRule;
++import androidx.test.platform.app.InstrumentationRegistry;
+ import org.junit.Rule;
+ import org.junit.Test;
+ import org.junit.runner.RunWith;
+-import static androidx.test.espresso.Espresso.onView;
+-import static androidx.test.espresso.matcher.ViewMatchers.withText;
+-import static androidx.test.espresso.assertion.ViewAssertions.matches;
+-import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
+-import androidx.test.espresso.action.ViewActions;
+-/** Stable smoke tests: do not match transient focus on a non-modal floating drawer. */
++import java.util.concurrent.atomic.AtomicBoolean;
++import static org.junit.Assert.*;
++
++/** Verify the actual Activity tree without relying on emulator window-focus timing.
++ * Player/media UI and popup focus get separate device tests, not false green here. */
+ @RunWith(AndroidJUnit4.class)
+ public class UiSmokeTest {
+     @Rule public ActivityTestRule<MainActivity> activity=new ActivityTestRule<>(MainActivity.class);
++
++    private View findText(View root,String target){
++        if(root instanceof TextView && target.contentEquals(((TextView)root).getText()))return root;
++        if(root instanceof ViewGroup){
++            ViewGroup group=(ViewGroup)root;
++            for(int i=0;i<group.getChildCount();i++){
++                View match=findText(group.getChildAt(i),target);
++                if(match!=null)return match;
++            }
++        }
++        return null;
++    }
++
+     @Test public void launchesAndShowsHome(){
+-        onView(withText("Мои переписки")).check(matches(isDisplayed()));
++        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
++        AtomicBoolean ok=new AtomicBoolean(false);
++        InstrumentationRegistry.getInstrumentation().runOnMainSync(()->{
++            View label=findText(activity.getActivity().getWindow().getDecorView(),"Мои переписки");
++            ok.set(label!=null&&label.isShown());
++        });
++        assertTrue("Home title should be present and visible",ok.get());
+     }
++
+     @Test public void hamburgerOpensWithoutCrash(){
+-        onView(withText("☰")).perform(ViewActions.click());
+-        // The drawer is implemented as a translucent Dialog; its window focus on
+-        // software-only emulators can lag after animations, so avoid flaky root assertions.
+-        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().waitForIdleSync();
++        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
++        AtomicBoolean pressed=new AtomicBoolean(false);
++        InstrumentationRegistry.getInstrumentation().runOnMainSync(()->{
++            View menu=findText(activity.getActivity().getWindow().getDecorView(),"☰");
++            if(menu!=null&&menu.isShown())pressed.set(menu.performClick());
++        });
++        assertTrue("Hamburger must be visible and handle click",pressed.get());
++        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+     }
+-}+}
+--- a/app/src/main/java/org/openarchive/telegram/MainActivity.java
++++ b/app/src/main/java/org/openarchive/telegram/MainActivity.java
+@@ -93,8 +93,12 @@
+     private final ExecutorService mediaWorker=Executors.newFixedThreadPool(2);
+     private final Handler handler=new Handler(Looper.getMainLooper());
+     private final Runnable deferredReadingSave=this::saveReadingProgress;
++    // Scroll events can arrive 60-120 times/sec. Coalesce geometry lookups and
++    // preference writes instead of doing them during every animation frame.
++    private final Runnable deferredFloatingCheck=this::checkAutoFloat;
+     private Runnable scheduledPrefetch;
+-    private void scheduleReadingSave(){handler.removeCallbacks(deferredReadingSave);handler.postDelayed(deferredReadingSave,280);}
++    private void scheduleReadingSave(){handler.removeCallbacks(deferredReadingSave);handler.postDelayed(deferredReadingSave,350);}
++    private void scheduleFloatingCheck(){handler.removeCallbacks(deferredFloatingCheck);handler.postDelayed(deferredFloatingCheck,70);}
+     private long lastLoadedMessageId=-1;
+     private final LruCache<String,Bitmap> thumbs=new LruCache<String,Bitmap>(12*1024*1024){
+         @Override protected int sizeOf(String key,Bitmap b){return b.getByteCount();}
+@@ -893,7 +897,7 @@
+         searchArea=column();toolArea.addView(searchArea,p(-1,-2));
+         status=text("",11,SUB);status.setPadding(px(8),px(4),px(8),px(6));status.setMaxLines(3);base.addView(status,p(-1,-2));
+         scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(false);
+-        scroll.setOnScrollChangeListener((View.OnScrollChangeListener)(v,x,y,ox,oy)->{if(!home&&(screen.equals("chat")||screen.equals("search"))&&!loadingMore&&list.getHeight()>0&&y>oy&&y+scroll.getHeight()>list.getHeight()-px(300)&&((screen.equals("chat")?autoLoaded:searchLoaded)<total)){appendMessages();}checkAutoFloat();if(!home&&screen.equals("chat"))scheduleReadingSave();});
++        scroll.setOnScrollChangeListener((View.OnScrollChangeListener)(v,x,y,ox,oy)->{if(!home&&(screen.equals("chat")||screen.equals("search"))&&!loadingMore&&list.getHeight()>0&&y>oy&&y+scroll.getHeight()>list.getHeight()-px(300)&&((screen.equals("chat")?autoLoaded:searchLoaded)<total)){appendMessages();}if(!home&&"chat".equals(screen)){scheduleFloatingCheck();scheduleReadingSave();}});
+         FrameLayout scrollHost=new FrameLayout(this);
+         base.addView(scrollHost,new LinearLayout.LayoutParams(-1,0,1));
+         scrollHost.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
+@@ -1958,9 +1962,16 @@
+     private void resolveMedia(String path,java.util.function.Consumer<Uri> success){
+         if(folder==null){toast("Сначала выбери папку с экспортом");return;}
+         DocumentFolder current=folder;
++        final String requestedArchive=activeKey;
++        final int requestedLoad=loadToken;
++        final int requestedPlayback=playbackGeneration;
+         mediaWorker.execute(()->{
+             Uri result=null;try{result=current.resolve(path);}catch(Exception ignored){}
+             Uri uri=result;runOnUiThread(()->{
++                // A slow SAF provider must never open media from a previously
++                // selected chat after navigation or player closure.
++                if(isFinishing()||!MediaRequestGuard.isCurrent(requestedArchive,activeKey,
++                        requestedLoad,loadToken,requestedPlayback,playbackGeneration))return;
+                 if(uri==null){status.setText("Файл не найден: "+path);toast("Медиа не найдено в выбранной папке");}
+                 else success.accept(uri);
+             });
+@@ -2102,7 +2113,13 @@
+                 }
+                 @Override public void onSurfaceTextureSizeChanged(SurfaceTexture surface,int w,int h){}
+                 @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture surface){
+-                    if(activeTexture==texture)stopPlayback();return true;
++                    if(activeTexture==texture){
++                        // Do not remove a TextureView from its parent from inside
++                        // its own destruction callback (can crash during back navigation).
++                        activeTexture=null;
++                        stopPlayback();
++                    }
++                    return true;
+                 }
+                 @Override public void onSurfaceTextureUpdated(SurfaceTexture surface){}
+             });
+@@ -2260,6 +2277,7 @@
+         FrameLayout.LayoutParams film=new FrameLayout.LayoutParams(-1,px(83),Gravity.BOTTOM);frame.addView(strip,film);
+         final MessageDb.Attachment[] current={initial};
+         final int[] generation={0};
++        dialog.setOnDismissListener(ignored->{generation[0]++;picture.animate().cancel();});
+         final java.util.function.Consumer<MessageDb.Attachment>[] show=new java.util.function.Consumer[1];
+         show[0]=item->{
+             current[0]=item;int id=++generation[0];picture.setScaleX(1f);picture.setScaleY(1f);
+@@ -2296,7 +2314,14 @@
+                 Bitmap loaded=bitmap;
+                 android.graphics.drawable.Drawable loadedAnimation=animated;
+                 runOnUiThread(()->{
+-                    if(id!=generation[0]||!dialog.isShowing())return;
++                    if(id!=generation[0]||!dialog.isShowing()||isFinishing()||isDestroyed()){
++                        // Closing a gallery during a slow SAF decode must free its
++                        // bitmap instead of retaining several megabytes until GC.
++                        if(loaded!=null&&!loaded.isRecycled())loaded.recycle();
++                        if(Build.VERSION.SDK_INT>=28&&loadedAnimation instanceof android.graphics.drawable.AnimatedImageDrawable)
++                            ((android.graphics.drawable.AnimatedImageDrawable)loadedAnimation).stop();
++                        return;
++                    }
+                     picture.animate().cancel();picture.setAlpha(0f);picture.setTranslationX(px(12));
+                     if(loadedAnimation!=null){
+                         picture.setImageDrawable(loadedAnimation);
+@@ -2677,6 +2702,7 @@
+ 
+     @Override protected void onPause(){
+         handler.removeCallbacks(deferredReadingSave);
++        handler.removeCallbacks(deferredFloatingCheck);
+         saveReadingProgress();
+         stopPlayback();
+         super.onPause();
+@@ -2684,5 +2710,7 @@
+     @Override protected void onDestroy(){
+         if(pendingCapsulePassword!=null){java.util.Arrays.fill(pendingCapsulePassword,(char)0);pendingCapsulePassword=null;}
+         if(scheduledPrefetch!=null)handler.removeCallbacks(scheduledPrefetch);
+-        handler.removeCallbacks(deferredReadingSave);stopPlayback();worker.execute(()->db.close());worker.shutdown();mediaWorker.shutdown();super.onDestroy();}
++        handler.removeCallbacks(deferredReadingSave);
++        handler.removeCallbacks(deferredFloatingCheck);
++        stopPlayback();worker.execute(()->db.close());worker.shutdown();mediaWorker.shutdown();super.onDestroy();}
+ }
+--- a/app/src/main/java/org/openarchive/telegram/MediaRequestGuard.java
++++ b/app/src/main/java/org/openarchive/telegram/MediaRequestGuard.java
+@@ -0,0 +1,12 @@
++package org.openarchive.telegram;
++
++/** Pure immutable-token decision for async media actions. No private data stored. */
++final class MediaRequestGuard {
++    private MediaRequestGuard() {}
++    static boolean isCurrent(String requestedArchive,String activeArchive,
++                             int requestedLoad,int activeLoad,
++                             int requestedPlayback,int activePlayback){
++        return requestedArchive!=null&&requestedArchive.equals(activeArchive)
++            && requestedLoad==activeLoad&&requestedPlayback==activePlayback;
++    }
++}
+--- a/app/src/main/java/org/openarchive/telegram/TelegramImporter.java
++++ b/app/src/main/java/org/openarchive/telegram/TelegramImporter.java
+@@ -102,7 +102,7 @@
+         String base=kindFromExtension(path);
+         boolean voice=low.contains("voice_messages")||low.contains("voice_message")||low.contains("audio_message")||low.contains("voice_note");
+         boolean round=low.contains("round_video")||low.contains("video_message")||low.contains("video_note");
+-        boolean sticker=low.contains("sticker")||low.endsWith(".tgs")||low.endsWith(".webp")&&low.contains("stickers");
++        boolean sticker=low.startsWith("stickers/")||low.contains("/stickers/")||low.matches(".*\\.tgs(?:[?#].*)?$");
+         boolean gif=low.matches(".*\\.gif(?:[?#].*)?$")||low.contains("/animations/")||low.contains("/gifs/")||low.contains("/animated/")||low.contains("animation")&&low.endsWith(".mp4");
+         for(Element p=node;p!=null;p=p.parent()){
+             String cls=p.className().toLowerCase(Locale.ROOT);
+--- a/app/src/test/java/org/openarchive/telegram/MediaRequestGuardTest.java
++++ b/app/src/test/java/org/openarchive/telegram/MediaRequestGuardTest.java
+@@ -0,0 +1,25 @@
++package org.openarchive.telegram;
++
++import org.junit.Test;
++import static org.junit.Assert.*;
++
++public class MediaRequestGuardTest {
++    @Test public void currentRequestAllowed(){
++        assertTrue(MediaRequestGuard.isCurrent("abc","abc",3,3,8,8));
++    }
++    @Test public void differentArchiveRejected(){
++        assertFalse(MediaRequestGuard.isCurrent("abc","def",3,3,8,8));
++    }
++    @Test public void switchedScreenRejected(){
++        assertFalse(MediaRequestGuard.isCurrent("abc","abc",3,4,8,8));
++    }
++    @Test public void closedPlayerRejected(){
++        assertFalse(MediaRequestGuard.isCurrent("abc","abc",3,3,8,9));
++    }
++    @Test public void nullArchiveRejected(){
++        assertFalse(MediaRequestGuard.isCurrent(null,"abc",3,3,8,8));
++    }
++    @Test public void multipleSwitchesNeverBecomeCurrent(){
++        for(int i=0;i<2000;i++)assertFalse(MediaRequestGuard.isCurrent("a","a",10,10+i+1,5,5));
++    }
++}
+--- a/app/src/test/java/org/openarchive/telegram/TelegramMediaClassificationRegressionTest.java
++++ b/app/src/test/java/org/openarchive/telegram/TelegramMediaClassificationRegressionTest.java
+@@ -27,4 +27,10 @@
+         assertEquals("round",TelegramImporter.classify("video_messages/round_video_01.mp4",element("round_video")));
+         assertEquals("video",TelegramImporter.classify("video_files/movie_01.mp4",element("video")));
+     }
++    @Test public void gifWithStickerInFilenameIsStillGif(){
++        assertEquals("gif",TelegramImporter.classify("gifs/sticker_081.gif",element("animated")));
++        assertEquals("gif",TelegramImporter.classify("animations/sticker_123.mp4",element("animated")));
++        assertEquals("image",TelegramImporter.classify("photos/sticker.jpg",element("photo_wrap")));
++        assertEquals("sticker",TelegramImporter.classify("stickers/anything.gif",element("sticker_wrap")));
++    }
+ }
