@@ -25,6 +25,8 @@ jobs:
           cat .qa/v035-source.part{1,2,3,4}.b64 | base64 -d > /tmp/ta-v035.tar.xz
           echo 'b151d7ab9bd6ae3bc16929bfa73a59b37adc097ab755d5a019c11afcbed42838  /tmp/ta-v035.tar.xz' | sha256sum -c -
           tar -xJf /tmp/ta-v035.tar.xz
+          git apply --check .qa/v035-hotfix.patch
+          git apply .qa/v035-hotfix.patch
       - name: Install Android SDK 35
         shell: bash
         run: |
@@ -62,6 +64,8 @@ jobs:
           cat .qa/v035-source.part{1,2,3,4}.b64 | base64 -d > /tmp/ta-v035.tar.xz
           echo 'b151d7ab9bd6ae3bc16929bfa73a59b37adc097ab755d5a019c11afcbed42838  /tmp/ta-v035.tar.xz' | sha256sum -c -
           tar -xJf /tmp/ta-v035.tar.xz
+          git apply --check .qa/v035-hotfix.patch
+          git apply .qa/v035-hotfix.patch
       - name: Emulator Android 8 TGS rendering, portable recovery, media isolation
         uses: reactivecircus/android-emulator-runner@v2
         with:
