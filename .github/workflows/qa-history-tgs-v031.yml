@@ -25,6 +25,7 @@ jobs:
           cat .qa/history-tgs-source.part{1,2,3,4}.b64 | base64 --decode >/tmp/v031-source.tar.xz
           echo 'a6e0f2f5f0e037a00f6878f1fd1e6240d0faf6d22a0ec9574cfe5b93a0dfb154  /tmp/v031-source.tar.xz' | sha256sum -c -
           tar -xJf /tmp/v031-source.tar.xz
+          patch --batch -p1 < .qa/v031-history-comparison-fix.patch
       - name: Android SDK
         shell: bash
         run: |
