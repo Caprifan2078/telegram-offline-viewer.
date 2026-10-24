@@ -160,6 +160,26 @@ class MessageDb extends SQLiteOpenHelper {
         }}
         return list;
     }
+    /** Keyset pagination for sequential scrolling; OFFSET remains for random jumps. */
+    List<Item> pageAfter(long afterId,int limit,String q,boolean deep,String author,boolean onlyMedia,boolean favorites){
+        if(limit<=0)return new ArrayList<>();
+        Filter f=condition(q,deep,author,onlyMedia,favorites);
+        String where=" WHERE messages.id > ?"+(f.clause.isEmpty()?"": " AND "+f.clause.substring(7));
+        String[] args=new String[f.args.length+1];args[0]=String.valueOf(afterId);
+        System.arraycopy(f.args,0,args,1,f.args.length);
+        ArrayList<Item> list=new ArrayList<>();
+        String sql="SELECT id,author,date_text,body,media,media_type,"+
+                "EXISTS(SELECT 1 FROM favorites WHERE message_id=messages.id) FROM messages"+
+                where+" ORDER BY id LIMIT "+limit;
+        try(Cursor c=getReadableDatabase().rawQuery(sql,args)){
+            while(c.moveToNext()){
+                Item m=new Item();m.id=c.getLong(0);m.author=c.getString(1);
+                m.date=c.getString(2);m.body=c.getString(3);m.media=c.getString(4);
+                m.mediaType=c.getString(5);m.favorite=c.getInt(6)!=0;list.add(m);
+            }
+        }
+        return list;
+    }
     boolean toggleFavorite(long id){
         SQLiteDatabase d=getWritableDatabase();
         if(isFavorite(id)){d.delete("favorites","message_id=?",new String[]{String.valueOf(id)});return false;}
