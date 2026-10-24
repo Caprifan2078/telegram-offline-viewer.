@@ -1,0 +1,20 @@
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -4,7 +4,7 @@
+     namespace 'org.openarchive.telegram'
+     compileSdk 35
+     defaultConfig {
+-        applicationId 'org.openarchive.telegram'
++        applicationId 'org.openarchive.telegram.qa'
+         minSdk 26
+         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+         targetSdk 35
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -1,5 +1,5 @@
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+-    <application android:allowBackup="false" android:label="Telegram Archive" android:theme="@style/AppTheme" android:usesCleartextTraffic="false">
++    <application android:allowBackup="false" android:label="Telegram Archive QA" android:theme="@style/AppTheme" android:usesCleartextTraffic="false">
+         <activity android:name=".RoundPlayerActivity" android:exported="false" android:supportsPictureInPicture="true" android:resizeableActivity="true" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout" />
+         <activity android:name=".MainActivity" android:exported="true">
+             <intent-filter>
