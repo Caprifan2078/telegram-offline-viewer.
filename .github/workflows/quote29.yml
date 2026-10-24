@@ -25,6 +25,8 @@ jobs:
           cat .qa/quote29_source.part{1,2,3,4}.b64 | base64 -d > /tmp/source.tar.xz
           echo '07999a8fec28402c0d420e4b8632a512e6b647af80ce31d22d1907629e6f7963  /tmp/source.tar.xz' | sha256sum -c -
           tar -xJf /tmp/source.tar.xz
+          sed -i 's#Избранное / заметки#Личные заметки#g' app/src/main/java/org/openarchive/telegram/HelpContent.java
+          grep -q 'Личные заметки' app/src/main/java/org/openarchive/telegram/HelpContent.java
       - name: Install Android SDK 35
         shell: bash
         run: |
