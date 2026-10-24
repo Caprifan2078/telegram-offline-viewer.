@@ -1,0 +1,14 @@
+--- a/app/src/main/java/org/openarchive/telegram/MainActivity.java
++++ b/app/src/main/java/org/openarchive/telegram/MainActivity.java
+@@ -2318,8 +2318,9 @@
+                         MessageDb.Attachment a=files.get(i);
+                         titles[i]=mediaLabel(a.kind)+" · #"+a.messageId+" · "+clip(a.path,36);
+                     }
+-                    AlertDialog.Builder picker=new AlertDialog.Builder(this).setTitle("Выбери вложение · "+(offset+1)+"–"+(offset+files.size()))
+-                        .setMessage("Сохраняется только ссылка на медиа в твоём архиве — без дополнительной копии файла.")
++                    if(files.isEmpty()){toast("В этом архиве больше нет вложений для выбора");return;}
++                    AlertDialog.Builder picker=new AlertDialog.Builder(this)
++                        .setTitle("Прикрепить ссылку из архива · "+(offset+1)+"–"+(offset+files.size()))
+                         .setItems(titles,(dialog,index)->{
+                             MessageDb.Attachment selected=files.get(index);
+                             worker.execute(()->{
