@@ -1,0 +1,66 @@
+name: v0.27 targeted emulator regression
+on:
+  push:
+    branches: [qa/v027-batch-help-build-20261024]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  emulator:
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [26, 30]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Restore QA app including offline help
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .qa/v027-batch-source.part{1,2,3,4}.b64 | base64 -d > /tmp/batch-source.tar.xz
+          echo '38797250cf6f54db29f3c77fa1c075083bbe8a36d78bdfa69f78af1aaa9cc7c7  /tmp/batch-source.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/batch-source.tar.xz
+          cp .qa/HelpActivity.java app/src/main/java/org/openarchive/telegram/HelpActivity.java
+          mkdir -p app/src/main/assets
+          cp .qa/help_ru.txt app/src/main/assets/help_ru.txt
+          python3 .qa/apply_v027.py
+          cp .qa/HelpScreenTest.java app/src/androidTest/java/org/openarchive/telegram/HelpScreenTest.java
+      - name: Prepare Android API 35 SDK
+        shell: bash
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Test real Android collections, storage and help screen
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          arch: x86_64
+          disk-size: 2048M
+          ram-size: 1536M
+          disable-animations: true
+          emulator-boot-timeout: 500
+          script: |
+            gradle assembleDebug assembleDebugAndroidTest --no-daemon --stacktrace
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb shell am instrument -w -e class org.openarchive.telegram.CollectionsDatabaseTest,org.openarchive.telegram.HelpScreenTest,org.openarchive.telegram.MediaSaveIntegrationTest org.openarchive.telegram.test/androidx.test.runner.AndroidJUnitRunner | tee /tmp/v027-instrumentation.txt
+            grep -E '^OK \([0-9]+ tests?\)' /tmp/v027-instrumentation.txt
+      - name: Save Android test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v027-api-${{ matrix.api }}-targeted-results
+          path: |
+            app/build/outputs/androidTest-results/
+            app/build/reports/androidTests/
+          if-no-files-found: warn
