@@ -1,0 +1,50 @@
+name: Telegram Archive v0.27 QA with in-app Help
+on:
+  push:
+    branches: [qa/v027-batch-help-build-20261024]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-and-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Reconstruct and verify latest WIP source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .qa/v027-batch-source.part{1,2,3,4}.b64 | base64 -d > /tmp/batch-source.tar.xz
+          echo '38797250cf6f54db29f3c77fa1c075083bbe8a36d78bdfa69f78af1aaa9cc7c7  /tmp/batch-source.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/batch-source.tar.xz
+          cp .qa/HelpActivity.java app/src/main/java/org/openarchive/telegram/HelpActivity.java
+          mkdir -p app/src/main/assets
+          cp .qa/help_ru.txt app/src/main/assets/help_ru.txt
+          python3 .qa/apply_v027.py
+          grep -E 'version(Code|Name)' app/build.gradle
+      - name: Prepare Android API 35 SDK
+        shell: bash
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Android compile and JVM tests
+        run: gradle assembleDebug testDebugUnitTest --no-daemon --stacktrace
+      - name: Preserve APK and test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TelegramArchive-v027-Help-Batch-QA
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/test-results/
+            app/build/reports/tests/
+          if-no-files-found: warn
