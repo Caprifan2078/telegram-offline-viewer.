@@ -1,0 +1,46 @@
+name: v028 feedback Android build
+on:
+  push:
+    branches: [qa/v028-user-feedback-20261024]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Restore and authenticate v028 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .qa/v028-source.part{1,2,3,4}.b64 | base64 -d > /tmp/v028.tar.xz
+          echo 'eb148f86e37559b643f2a06e10515baed8c8952fd954b68876b10dfb18240443  /tmp/v028.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/v028.tar.xz
+      - name: Android build tools
+        shell: bash
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Compile and run JVM regression tests
+        run: gradle assembleDebug assembleDebugAndroidTest testDebugUnitTest --no-daemon --stacktrace
+      - name: Save debug APK and JUnit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v028-feedback-debug-apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            app/build/test-results/
+            app/build/reports/
+          if-no-files-found: warn
