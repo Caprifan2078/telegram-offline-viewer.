@@ -1,0 +1,272 @@
+--- a/app/src/main/java/org/openarchive/telegram/RoundPlayerActivity.java
++++ b/app/src/main/java/org/openarchive/telegram/RoundPlayerActivity.java
+@@ -1,65 +1,154 @@
+ package org.openarchive.telegram;
++
+ import android.app.Activity;
++import android.app.AlertDialog;
+ import android.app.PictureInPictureParams;
+ import android.content.res.Configuration;
++import android.graphics.Color;
++import android.graphics.drawable.GradientDrawable;
++import android.media.MediaPlayer;
+ import android.net.Uri;
+ import android.os.Build;
+ import android.os.Bundle;
++import android.os.Handler;
++import android.os.Looper;
+ import android.util.Rational;
+ import android.view.Gravity;
+ import android.view.View;
++import android.view.ViewGroup;
+ import android.widget.Button;
+ import android.widget.FrameLayout;
+ import android.widget.LinearLayout;
+-import android.widget.MediaController;
++import android.widget.SeekBar;
++import android.widget.TextView;
+ import android.widget.VideoView;
++import java.util.Locale;
++
++/** Single, touch-friendly offline round-video player. No duplicate system MediaController. */
+ public class RoundPlayerActivity extends Activity {
+- private VideoView video;
+- private View controls;
+- private boolean playing;
+- private MediaController seekControls;
+- private int restoredPosition;
+- @Override public void onCreate(Bundle state) {
+-  super.onCreate(state);
+-  if(state!=null)restoredPosition=state.getInt("round_playback_ms",0);
+-  FrameLayout frame=new FrameLayout(this);
+-  setContentView(frame);
+-  video=new VideoView(this);
+-  frame.addView(video,new FrameLayout.LayoutParams(-1,-1));
+-  // VideoView keeps the actual playback Surface. MediaController adds working
+-  // play/pause and seek gestures even for Telegram circular MP4 exports.
+-  seekControls=new MediaController(this);
+-  video.setMediaController(seekControls);
+-  seekControls.setAnchorView(video);
+-  video.setOnClickListener(v->seekControls.show(3500));
+-  Button pip=new Button(this);
+-  pip.setText("Плавающее окно");
+-  FrameLayout.LayoutParams bar=new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM);
+-  frame.addView(pip,bar); controls=pip;
+-  pip.setOnClickListener(v->enterPip());
+-  Uri uri=getIntent().getData();
+-  if(uri==null){finish();return;}
+-  video.setOnPreparedListener(mp->{
+-   playing=true;mp.setLooping(true);
+-   if(restoredPosition>0)video.seekTo(restoredPosition);
+-   video.start();
+-   if(!isInPictureInPictureMode())seekControls.show(2800);
+-  });
+-  video.setOnErrorListener((mp,w,e)->{pip.setText("Не удалось открыть MP4");return true;});
+-  video.setVideoURI(uri);
+- }
+- private void enterPip(){
+-  if(!playing || Build.VERSION.SDK_INT<26)return;
+-  try{enterPictureInPictureMode(new PictureInPictureParams.Builder().setAspectRatio(new Rational(1,1)).build());}catch(Exception ignored){}
+- }
+- @Override protected void onUserLeaveHint(){super.onUserLeaveHint();enterPip();}
+- @Override public void onPictureInPictureModeChanged(boolean mode,Configuration config){super.onPictureInPictureModeChanged(mode,config);controls.setVisibility(mode?View.GONE:View.VISIBLE);}
+- @Override protected void onSaveInstanceState(Bundle state){
+-  if(video!=null)state.putInt("round_playback_ms",Math.max(0,video.getCurrentPosition()));
+-  super.onSaveInstanceState(state);
+- }
+- @Override protected void onDestroy(){
+-  if(video!=null)video.stopPlayback();
+-  super.onDestroy();
+- }
++    private VideoView video;
++    private LinearLayout topBar,bottomBar;
++    private Button playPause;
++    private TextView time;
++    private SeekBar timeline;
++    private MediaPlayer currentPlayer;
++    private boolean prepared=false,scrubbing=false;
++    private float speed=1f;
++    private int restoredPosition;
++    private final Handler ui=new Handler(Looper.getMainLooper());
++    private final Runnable update=new Runnable(){@Override public void run(){
++        if(!isFinishing()&&video!=null&&prepared){
++            try{
++                int duration=Math.max(0,video.getDuration());
++                int progress=Math.max(0,video.getCurrentPosition());
++                if(!scrubbing){timeline.setMax(Math.max(1,duration));timeline.setProgress(Math.min(duration,progress));}
++                time.setText(clock(progress)+" / "+clock(duration));
++                playPause.setText(video.isPlaying()?"Ⅱ":"▶");
++            }catch(Exception ignored){}
++        }
++        if(!isFinishing())ui.postDelayed(this,350);
++    }};
++    private int dp(float n){return (int)(n*getResources().getDisplayMetrics().density+.5f);}
++    private GradientDrawable glass(int radius){
++        GradientDrawable bg=new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
++            new int[]{0xcc203a51,0xee102235});
++        bg.setCornerRadius(dp(radius));bg.setStroke(dp(1),0x664e8bb2);return bg;
++    }
++    private Button button(String title,int width){
++        Button b=new Button(this);b.setText(title);b.setTextSize(18);b.setAllCaps(false);
++        b.setTextColor(Color.WHITE);b.setBackground(glass(14));
++        b.setMinWidth(0);b.setMinimumWidth(0);b.setPadding(dp(8),0,dp(8),0);
++        b.setLayoutParams(new LinearLayout.LayoutParams(dp(width),dp(46)));
++        return b;
++    }
++    private static String clock(int ms){int v=Math.max(0,ms)/1000;return String.format(Locale.ROOT,"%02d:%02d",v/60,v%60);}
++    @Override public void onCreate(Bundle state){
++        super.onCreate(state);
++        if(state!=null)restoredPosition=state.getInt("round_playback_ms",0);
++        getWindow().setStatusBarColor(0xff091522);getWindow().setNavigationBarColor(0xff091522);
++        FrameLayout root=new FrameLayout(this);root.setBackgroundColor(0xff091522);setContentView(root);
++        video=new VideoView(this);
++        root.addView(video,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
++
++        topBar=new LinearLayout(this);topBar.setGravity(Gravity.CENTER_VERTICAL);topBar.setPadding(dp(12),dp(8),dp(12),dp(8));
++        topBar.setBackground(glass(18));
++        FrameLayout.LayoutParams top=new FrameLayout.LayoutParams(-1,dp(64),Gravity.TOP);
++        top.setMargins(dp(12),dp(10),dp(12),0);root.addView(topBar,top);
++        Button back=button("‹",48);back.setContentDescription("Вернуться назад");topBar.addView(back);
++        back.setOnClickListener(v->finish());
++        TextView title=new TextView(this);title.setText("Видеосообщение");title.setTextColor(Color.WHITE);title.setTextSize(16);
++        title.setGravity(Gravity.CENTER_VERTICAL);title.setPadding(dp(14),0,0,0);
++        topBar.addView(title,new LinearLayout.LayoutParams(0,-1,1));
++        Button speedButton=button("1×",54);speedButton.setContentDescription("Скорость видео");topBar.addView(speedButton);
++        speedButton.setOnClickListener(v->chooseSpeed(speedButton));
++        Button pip=button("⊞",48);pip.setContentDescription("Плавающий экран Picture-in-Picture");topBar.addView(pip);
++        pip.setOnClickListener(v->enterPip());
++
++        bottomBar=new LinearLayout(this);bottomBar.setOrientation(LinearLayout.VERTICAL);
++        bottomBar.setPadding(dp(10),dp(7),dp(10),dp(10));bottomBar.setBackground(glass(18));
++        FrameLayout.LayoutParams bottom=new FrameLayout.LayoutParams(-1,dp(116),Gravity.BOTTOM);
++        bottom.setMargins(dp(12),0,dp(12),dp(14));root.addView(bottomBar,bottom);
++        timeline=new SeekBar(this);timeline.setContentDescription("Перемотка видео");bottomBar.addView(timeline,new LinearLayout.LayoutParams(-1,dp(40)));
++        timeline.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
++            @Override public void onStartTrackingTouch(SeekBar b){scrubbing=true;}
++            @Override public void onStopTrackingTouch(SeekBar b){if(prepared)video.seekTo(b.getProgress());scrubbing=false;}
++            @Override public void onProgressChanged(SeekBar b,int p,boolean byUser){if(byUser)time.setText(clock(p)+" / "+clock(video.getDuration()));}
++        });
++        LinearLayout bottomControls=new LinearLayout(this);bottomControls.setGravity(Gravity.CENTER_VERTICAL|Gravity.CENTER_HORIZONTAL);
++        bottomBar.addView(bottomControls,new LinearLayout.LayoutParams(-1,dp(51)));
++        Button minus=button("−10",64);minus.setContentDescription("На 10 секунд назад");bottomControls.addView(minus);
++        minus.setOnClickListener(v->skip(-10000));
++        playPause=button("▶",66);playPause.setContentDescription("Пауза или воспроизведение");bottomControls.addView(playPause);
++        playPause.setOnClickListener(v->{if(!prepared)return;if(video.isPlaying())video.pause();else video.start();playPause.setText(video.isPlaying()?"Ⅱ":"▶");});
++        Button plus=button("+10",64);plus.setContentDescription("На 10 секунд вперёд");bottomControls.addView(plus);
++        plus.setOnClickListener(v->skip(10000));
++        time=new TextView(this);time.setText("00:00 / 00:00");time.setTextColor(0xffbed6e4);
++        time.setTextSize(12);time.setGravity(Gravity.CENTER);
++        bottomControls.addView(time,new LinearLayout.LayoutParams(0,dp(44),1));
++        video.setOnClickListener(v->{int visible=topBar.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE;
++            topBar.setVisibility(visible);bottomBar.setVisibility(visible);});
++        Uri uri=getIntent().getData();if(uri==null){finish();return;}
++        video.setOnPreparedListener(mp->{
++            prepared=true;currentPlayer=mp;mp.setLooping(true);
++            applySpeed();if(restoredPosition>0)video.seekTo(restoredPosition);
++            video.start();ui.removeCallbacks(update);ui.post(update);
++        });
++        video.setOnErrorListener((mp,what,extra)->{
++            prepared=false;currentPlayer=null;ui.removeCallbacks(update);
++            time.setText("Не удалось воспроизвести видео. Исходный файл не изменён.");return true;
++        });
++        video.setVideoURI(uri);
++    }
++    private void chooseSpeed(Button control){
++        final float[] values={0.25f,0.5f,0.75f,1f,1.25f,1.5f,2f};
++        String[] choices={"0.25×","0.5×","0.75×","1×","1.25×","1.5×","2×"};
++        new AlertDialog.Builder(this).setTitle("Скорость воспроизведения")
++            .setItems(choices,(d,pos)->{speed=values[pos];if(applySpeed())control.setText(choices[pos]);
++                else {speed=1f;control.setText("1×");android.widget.Toast.makeText(this,"Этот кодек не поддерживает скорость",android.widget.Toast.LENGTH_SHORT).show();}}).show();
++    }
++    private boolean applySpeed(){
++        if(currentPlayer==null||Build.VERSION.SDK_INT<23)return false;
++        try{android.media.PlaybackParams params=currentPlayer.getPlaybackParams();params.setSpeed(speed);currentPlayer.setPlaybackParams(params);return true;}
++        catch(Exception ignored){return false;}
++    }
++    private void skip(int ms){if(!prepared)return;
++        video.seekTo(Math.max(0,Math.min(Math.max(0,video.getDuration()-300),video.getCurrentPosition()+ms)));
++    }
++    private void enterPip(){
++        if(!prepared||Build.VERSION.SDK_INT<26)return;
++        try{enterPictureInPictureMode(new PictureInPictureParams.Builder().setAspectRatio(new Rational(1,1)).build());}
++        catch(Exception ignored){}
++    }
++    @Override protected void onUserLeaveHint(){super.onUserLeaveHint();enterPip();}
++    @Override public void onPictureInPictureModeChanged(boolean mode,Configuration config){
++        super.onPictureInPictureModeChanged(mode,config);
++        topBar.setVisibility(mode?View.GONE:View.VISIBLE);bottomBar.setVisibility(mode?View.GONE:View.VISIBLE);
++    }
++    @Override protected void onSaveInstanceState(Bundle state){
++        if(video!=null&&prepared)state.putInt("round_playback_ms",Math.max(0,video.getCurrentPosition()));
++        super.onSaveInstanceState(state);
++    }
++    @Override protected void onResume(){super.onResume();if(prepared){ui.removeCallbacks(update);ui.post(update);}}
++    @Override protected void onStop(){ui.removeCallbacks(update);super.onStop();}
++    @Override protected void onDestroy(){ui.removeCallbacks(update);if(video!=null)video.stopPlayback();super.onDestroy();}
+ }
+--- a/app/src/main/java/org/openarchive/telegram/MessageDb.java
++++ b/app/src/main/java/org/openarchive/telegram/MessageDb.java
+@@ -516,9 +516,9 @@
+     private String mediaWhere(String kind){
+         switch(kind){
+             case "all":return "";
+-            case "photos":return " WHERE a.kind IN ('image','sticker','gif')";
+-            case "videos":return " WHERE a.kind IN ('video','round')";
+-            case "audio":return " WHERE a.kind IN ('voice','audio')";
++            case "photos":return " WHERE a.kind='image'";
++            case "videos":return " WHERE a.kind='video'";
++            case "audio":return " WHERE a.kind='audio'";
+             default:return " WHERE a.kind='"+kind.replace("'","")+"'";
+         }
+     }
+--- a/app/src/main/java/org/openarchive/telegram/MainActivity.java
++++ b/app/src/main/java/org/openarchive/telegram/MainActivity.java
+@@ -2689,7 +2689,7 @@
+                 int cell=(screenWidth-px(40))/3;
+                 GridLayout.LayoutParams t=new GridLayout.LayoutParams();t.width=cell-px(4);t.height=cell-px(4);
+                 t.setMargins(px(2),px(2),px(2),px(2));gallery.addView(tile,t);
+-                ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);
++                ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                 tile.addView(image,new FrameLayout.LayoutParams(-1,-1));
+                 if("sticker".equals(a.kind)&&a.path.toLowerCase(Locale.ROOT).endsWith(".tgs")){
+                     TextView missing=text("TGS\n↗",16,FG);missing.setGravity(Gravity.CENTER);
+--- /dev/null
++++ b/app/src/androidTest/java/org/openarchive/telegram/MediaTabsIsolationTest.java
+@@ -0,0 +1,37 @@
++package org.openarchive.telegram;
++
++import android.content.Context;
++import android.database.sqlite.SQLiteDatabase;
++import androidx.test.ext.junit.runners.AndroidJUnit4;
++import androidx.test.platform.app.InstrumentationRegistry;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import static org.junit.Assert.*;
++import java.util.UUID;
++
++/** Prevent mixed voice/music, round/video and sticker/photo filters. */
++@RunWith(AndroidJUnit4.class)
++public class MediaTabsIsolationTest {
++ @Test public void eachCategoryContainsOnlyItsOwnType(){
++   Context ctx=InstrumentationRegistry.getInstrumentation().getTargetContext();
++   String key=UUID.randomUUID().toString().replace("-","");
++   MessageDb helper=new MessageDb(ctx,key);
++   try{
++     SQLiteDatabase db=helper.getWritableDatabase();
++     String[] kinds={"voice","audio","round","video","gif","sticker","image","file"};
++     long id=1;
++     for(String kind:kinds){db.execSQL("INSERT INTO messages (id,author,date_text,body) VALUES (?,?,?,?)",
++         new Object[]{id,"Anonymous","2026-10-01T12:00:00","Synthetic"});
++       db.execSQL("INSERT INTO attachments (id,message_id,path,kind) VALUES (?,?,?,?)",
++         new Object[]{id,id,kind+"/sample-"+id+".bin",kind}); id++;}
++     for(String kind:kinds){
++       assertEquals("Wrong count for "+kind,1,helper.mediaCount(kind));
++       assertEquals("Only one item belongs to "+kind,1,helper.mediaPage(kind,0,50).size());
++       assertEquals(kind,helper.mediaPage(kind,0,50).get(0).kind);
++     }
++     assertEquals(1,helper.mediaCount("photos"));
++     assertEquals(1,helper.mediaCount("videos"));
++     assertEquals(8,helper.mediaCount("all"));
++   }finally{helper.close();ctx.deleteDatabase("telegram_"+key+".db");}
++ }
++}
