@@ -1,0 +1,61 @@
+name: v030 SideBySide Safe APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [qa/v030-video-graphs-20261025]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Restore and verify full sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .qa/v030-source.part{1,2,3,4}.b64 | base64 -d > /tmp/source.tar.xz
+          echo '81a9c8b39d793c0d1509d97aacf166b93498b575cf43e0ed4fb5898991529dfc  /tmp/source.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/source.tar.xz
+      - name: Configure isolated QA package
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app/build.gradle')
+          s=p.read_text()
+          assert 'versionCode 29' in s and "versionName '0.29-quote-qa'" in s
+          s=s.replace('versionCode 29','versionCode 30').replace("versionName '0.29-quote-qa'","versionName '0.30-video-analytics-qa'")
+          assert '    compileOptions {' in s
+          s=s.replace('    compileOptions {',"    buildTypes {\n        debug { applicationIdSuffix '.qa' }\n    }\n    compileOptions {")
+          p.write_text(s)
+          manifest=Path('app/src/main/AndroidManifest.xml')
+          m=manifest.read_text()
+          assert 'android:label="Telegram Archive"' in m
+          manifest.write_text(m.replace('android:label="Telegram Archive"','android:label="Telegram Archive QA"'))
+          PY
+      - name: Android SDK
+        shell: bash
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Compile and regression tests
+        run: gradle assembleDebug testDebugUnitTest --no-daemon --stacktrace
+      - name: Publish installable QA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v030-side-by-side-apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/test-results/
+          if-no-files-found: warn
