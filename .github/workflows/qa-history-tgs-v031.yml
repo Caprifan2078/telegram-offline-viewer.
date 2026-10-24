@@ -1,0 +1,45 @@
+name: History TGS Cinema Android QA
+on:
+  push:
+    branches: [qa/v031-history-tgs-cinema-20261025]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Unpack and verify exact QA source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .qa/history-tgs-source.part{1,2,3,4}.b64 | base64 --decode >/tmp/v031-source.tar.xz
+          echo 'a6e0f2f5f0e037a00f6878f1fd1e6240d0faf6d22a0ec9574cfe5b93a0dfb154  /tmp/v031-source.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/v031-source.tar.xz
+      - name: Android SDK
+        shell: bash
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Compile and JVM tests
+        run: gradle assembleDebug testDebugUnitTest --no-daemon --stacktrace
+      - name: Preserve APK, tests and metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: history-tgs-v031-debug-apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/test-results/testDebugUnitTest/
+            app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: warn
