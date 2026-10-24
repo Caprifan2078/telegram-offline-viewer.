@@ -1,0 +1,14 @@
+--- a/app/src/main/java/org/openarchive/telegram/BackupVerifier.java
++++ b/app/src/main/java/org/openarchive/telegram/BackupVerifier.java
+@@ -163,10 +163,10 @@
+         try(ZipInputStream zip=new ZipInputStream(new BufferedInputStream(keep,128*1024))){
+             ZipEntry entry;byte[] buf=new byte[128*1024];
+             while((entry=zip.getNextEntry())!=null){
++                String name=entry.getName();
+                 if(++result.files>260000)throw new IOException("Слишком много элементов");
+                 BackupEntryPolicy.requireSafe(name,entry.isDirectory());
+                 if(entry.isDirectory()){zip.closeEntry();continue;}
+-                String name=entry.getName();
+                 if(name==null||name.startsWith("/")||name.contains("\\")||name.contains("\0"))throw new IOException("Недопустимый путь");
+                 if(!names.add(name))throw new IOException("Повторяющийся файл ZIP");
+                 for(String part:name.split("/"))if(part.equals("..")||part.equals("."))throw new IOException("Недопустимый путь");
