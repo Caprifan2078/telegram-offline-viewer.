@@ -1,0 +1,60 @@
+name: v028 final visual QA APK
+on:
+  push:
+    branches: [qa/v028-user-feedback-20261024]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Restore v028 source snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .qa/v028-source.part{1,2,3,4}.b64 | base64 -d > /tmp/v028.tar.xz
+          echo 'eb148f86e37559b643f2a06e10515baed8c8952fd954b68876b10dfb18240443  /tmp/v028.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/v028.tar.xz
+      - name: Apply two tiny visual refinements
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("app/src/main/java/org/openarchive/telegram/MainActivity.java")
+          s=p.read_text()
+          a='headerActions=btn("⋮");'
+          b='headerActions=btn("≡");'
+          assert s.count(a)==1
+          s=s.replace(a,b)
+          a='ImageView image=new ImageView(this);image.setScaleType(gallery?ImageView.ScaleType.CENTER_CROP:ImageView.ScaleType.FIT_CENTER);'
+          b='ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.FIT_CENTER);'
+          assert s.count(a)==1
+          p.write_text(s.replace(a,b))
+          PY
+      - name: Android build tools
+        shell: bash
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Compile and run unit tests
+        run: gradle assembleDebug testDebugUnitTest --no-daemon --stacktrace
+      - name: Upload visual QA APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v028-feedback-final-visual-apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/test-results/
+          if-no-files-found: warn
