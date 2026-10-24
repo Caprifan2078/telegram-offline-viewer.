@@ -1,0 +1,45 @@
+name: v032 Relationships Android QA
+on:
+  push:
+    branches: [qa/v032-relationships-echo-20261025]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Restore exact QA source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .qa/v032-fullsource-part{1,2,3,4}.b64 | base64 -d > /tmp/qa-source.tar.xz
+          echo '649b10dd93a9ce07ae60b10c4e23344903a086a155cec719c447cb64ea3c9991  /tmp/qa-source.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/qa-source.tar.xz
+      - name: Prepare SDK
+        shell: bash
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Assemble and test
+        run: gradle assembleDebug testDebugUnitTest --no-daemon --stacktrace
+      - name: Save APK, JVM evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TelegramArchive-v032-relationships-QA
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/test-results/
+            app/build/reports/tests/
+          if-no-files-found: warn
