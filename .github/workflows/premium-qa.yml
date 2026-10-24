@@ -1,0 +1,44 @@
+name: Premium QA full source build
+on:
+  push:
+    branches: [qa/v026-premium-safe-test-20261024]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Restore QA sources and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .qa/premium-source.part{1,2,3}.b64 | base64 -d > /tmp/source.tar.xz
+          echo '338357e643eb0b0a580b2b1ce5e3340af8939807bd11003b02db6dc464d2d455  /tmp/source.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/source.tar.xz
+      - name: Prepare Android SDK
+        shell: bash
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Compile and test
+        run: gradle assembleDebug testDebugUnitTest --no-daemon --stacktrace
+      - name: Preserve APK and test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: premium-qa-apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/test-results/
+          if-no-files-found: warn
