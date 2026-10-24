@@ -1,0 +1,121 @@
+--- a/app/src/main/java/org/openarchive/telegram/MainActivity.java
++++ b/app/src/main/java/org/openarchive/telegram/MainActivity.java
+@@ -2213,6 +2213,7 @@
+                     if(stages.isEmpty())analyticsText(list,"Периодов пока нет. Отметь начало и конец через долгое нажатие на сообщения.",ACCENT,14);
+                     long peak=1;for(ConversationPeriods.Stats st:stats.values())for(long n:st.bins)peak=Math.max(peak,n);
+                     final long maximum=peak;
++                    renderPeriodOverlay(stages,stats);
+                     int index=0;
+                     for(ConversationPeriods.Chapter stage:stages){
+                         ConversationPeriods.Stats st=stats.get(stage.id);
+@@ -2295,8 +2296,79 @@
+             });
+         }catch(Exception failure){runOnUiThread(()->{if(token==loadToken)status.setText("Ошибка киноленты: "+failure.getMessage());});}});
+     }
++    /** Opt-in overlay: each series uses the same messages-per-calendar-day Y axis.
++     * Labels and numeric tap details remain usable without interpreting colors. */
++    private void renderPeriodOverlay(List<ConversationPeriods.Chapter> periods,
++                                     LinkedHashMap<Long,ConversationPeriods.Stats> reports){
++        if(periods.size()<2)return;
++        int visible=Math.min(3,periods.size());
++        List<ConversationPeriods.Chapter> shown=new ArrayList<>(periods.subList(periods.size()-visible,periods.size()));
++        final int[] colors={0xff64E3D5,0xffFFB25B,0xffC59EFF};
++        LinearLayout card=analyticsCard("Наложение этапов · "+visible+" линии");
++        analyticsText(card,"Каждая линия — 12 равных отрезков времени. Сравнивается сообщений на календарный день. Нажми на точку, чтобы увидеть число.",SUB,11);
++        double max=0;
++        final double[][] series=new double[visible][12];
++        for(int k=0;k<visible;k++){
++            ConversationPeriods.Chapter chapter=shown.get(k);
++            ConversationPeriods.Stats report=reports.get(chapter.id);
++            double days=Math.max(1.0,report.calendarDays/12.0);
++            for(int i=0;i<12;i++){
++                series[k][i]=report.bins.get(i)/days;
++                max=Math.max(max,series[k][i]);
++            }
++            TextView legend=text("● "+chapter.name+" — "+report.messages+" сообщений за "+report.calendarDays+
++                " календарных дней",12,colors[k]);
++            legend.setPadding(px(8),px(4),px(6),px(4));card.addView(legend,p(-1,-2));
++        }
++        final double ceiling=Math.max(0.1,max);
++        View chart=new View(this){
++            final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
++            @Override protected void onDraw(Canvas canvas){
++                float left=px(29),top=px(12),right=getWidth()-px(10),bottom=getHeight()-px(28);
++                paint.setStrokeWidth(px(1));paint.setColor(0xff6A7E91);
++                for(int n=0;n<=4;n++){
++                    float y=top+(bottom-top)*n/4f;
++                    canvas.drawLine(left,y,right,y,paint);
++                    paint.setTextSize(px(9));
++                    String t=String.format(Locale.ROOT,"%.1f",ceiling*(4-n)/4);
++                    canvas.drawText(t,px(1),y+px(3),paint);
++                }
++                for(int n=0;n<12;n++){
++                    float x=left+(right-left)*n/11f;
++                    if(n==0||n==5||n==11){paint.setColor(SUB);paint.setTextSize(px(11));
++                        canvas.drawText(String.valueOf(n+1),x-px(3),getHeight()-px(7),paint);}
++                }
++                for(int k=0;k<series.length;k++){
++                    paint.setColor(colors[k]);paint.setStrokeWidth(px(3));
++                    float previousX=-1,previousY=-1;
++                    for(int n=0;n<12;n++){
++                        float x=left+(right-left)*n/11f;
++                        float y=bottom-(bottom-top)*(float)(series[k][n]/ceiling);
++                        if(n>0)canvas.drawLine(previousX,previousY,x,y,paint);
++                        canvas.drawCircle(x,y,px(3),paint);
++                        previousX=x;previousY=y;
++                    }
++                }
++            }
++            @Override public boolean onTouchEvent(MotionEvent event){
++                if(event.getAction()==MotionEvent.ACTION_DOWN)return true;
++                if(event.getAction()==MotionEvent.ACTION_UP){
++                    float l=px(29),r=getWidth()-px(10);
++                    int bin=Math.max(0,Math.min(11,Math.round((event.getX()-l)/Math.max(1,r-l)*11)));
++                    StringBuilder detail=new StringBuilder("Часть "+(bin+1)+"/12");
++                    for(int k=0;k<shown.size();k++)detail.append(" · ").append(clip(shown.get(k).name,12))
++                        .append(": ").append(String.format(Locale.ROOT,"%.1f",series[k][bin])).append("/день");
++                    toast(detail.toString());performClick();return true;
++                }
++                return super.onTouchEvent(event);
++            }
++            @Override public boolean performClick(){super.performClick();return true;}
++        };
++        chart.setContentDescription("Сравнение этапов: числовая шкала сообщений за календарный день");
++        card.addView(chart,p(-1,190));
++    }
+     private void renderPeriodBars(LinearLayout card,ConversationPeriods.Stats stats,long max){
+-        LinearLayout chart=row();chart.setGravity(Gravity.BOTTOM);card.addView(chart,p(-1,98));
++        LinearLayout chart=row();chart.setGravity(Gravity.BOTTOM);card.addView(chart,p(-1,125));
+         for(int i=0;i<stats.bins.size();i++){
+             long value=stats.bins.get(i);int height=(int)Math.round(74.0*value/Math.max(1,max));
+             LinearLayout slot=column();slot.setGravity(Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);
+@@ -2304,7 +2376,7 @@
+             TextView n=text(value==0?"·":String.valueOf(value),8,FG);n.setGravity(Gravity.CENTER);slot.addView(n,p(-1,17));
+             View bar=new View(this);bar.setBackground(shape(value==0?CHIP:ACCENT,4));slot.addView(bar,p(-1,Math.max(2,height)));
+             TextView x=text(String.valueOf(i+1),8,SUB);x.setGravity(Gravity.CENTER);slot.addView(x,p(-1,15));
+-            slot.setOnClickListener(v->toast("Отрезок "+(i+1)+"/12 · "+value+" сообщений"));
++            final int bin=i+1;slot.setOnClickListener(v->toast("Отрезок "+bin+"/12 · "+value+" сообщений"));
+         }
+     }
+     /** Local, read-only excerpt from a Telegram export. The user chooses the fragment;
+--- a/app/src/main/java/org/openarchive/telegram/ConversationPeriods.java
++++ b/app/src/main/java/org/openarchive/telegram/ConversationPeriods.java
+@@ -43,12 +43,17 @@
+         return id>=chapter.start.messageId && id<=chapter.end.messageId;
+     }
+     static final class Stats {
+-        final long messages, activeDays, dated, media;
++        final long messages, activeDays, dated, media, calendarDays;
+         final String firstDate,lastDate;
+         final List<Long> bins;
+         Stats(long messages,long days,long dated,long media,String first,String last,long[] values) {
+             this.messages=messages;this.activeDays=days;this.dated=dated;this.media=media;
+             firstDate=first;lastDate=last;
++            long span=1;
++            try{span=Math.max(1,java.time.temporal.ChronoUnit.DAYS.between(
++                java.time.LocalDate.parse(first),java.time.LocalDate.parse(last))+1);}
++            catch(Exception ignored){}
++            calendarDays=span;
+             ArrayList<Long> list=new ArrayList<>();for(long value:values)list.add(value);
+             bins=Collections.unmodifiableList(list);
+         }
