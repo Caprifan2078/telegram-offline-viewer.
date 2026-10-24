@@ -1,0 +1,23 @@
+name: Android SDK diagnostic
+on:
+  workflow_dispatch:
+  push:
+    branches: [qa/v025-android-baseline-20261024]
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Use runner Android SDK
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          sdkmanager --version
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - run: gradle assembleDebug testDebugUnitTest --no-daemon --stacktrace
