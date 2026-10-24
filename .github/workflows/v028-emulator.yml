@@ -1,0 +1,60 @@
+name: v028 device-like QA regression
+on:
+  push:
+    branches: [qa/v028-user-feedback-20261024]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  emulator:
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [26, 30]
+    runs-on: ubuntu-latest
+    timeout-minutes: 38
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Restore v028 source and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .qa/v028-source.part{1,2,3,4}.b64 | base64 -d > /tmp/v028.tar.xz
+          echo 'eb148f86e37559b643f2a06e10515baed8c8952fd954b68876b10dfb18240443  /tmp/v028.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/v028.tar.xz
+      - name: Android SDK 35
+        shell: bash
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort | tail -n 1)"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Verify UI, analytics and old archive database migration
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          arch: x86_64
+          disk-size: 2048M
+          ram-size: 1536M
+          disable-animations: true
+          emulator-boot-timeout: 500
+          script: |
+            gradle assembleDebug assembleDebugAndroidTest --no-daemon --stacktrace
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb shell am instrument -w -e class org.openarchive.telegram.MediaUpgradeRegressionTest,org.openarchive.telegram.CollectionsDatabaseTest,org.openarchive.telegram.MediaClassifierTest,org.openarchive.telegram.AnalyticsIntegrationTest,org.openarchive.telegram.UiSmokeTest org.openarchive.telegram.test/androidx.test.runner.AndroidJUnitRunner | tee /tmp/v028-targeted-tests.txt
+            grep -E '^OK \([0-9]+ tests?\)' /tmp/v028-targeted-tests.txt
+      - name: Preserve emulator results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v028-api-${{ matrix.api }}-regressions
+          path: |
+            app/build/outputs/androidTest-results/
+            app/build/reports/androidTests/
+          if-no-files-found: warn
