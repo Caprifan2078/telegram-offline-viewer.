@@ -1,0 +1,67 @@
+name: Telegram Archive v0.25 Android QA baseline
+on:
+  push:
+    branches: [qa/v025-android-baseline-20261024]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile-and-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Compile and run JVM tests
+        run: gradle assembleDebug testDebugUnitTest --no-daemon --stacktrace
+      - name: Store APK and test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-v025-baseline-build-results
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/test-results/
+            app/build/reports/tests/
+          if-no-files-found: warn
+  emulator:
+    needs: compile-and-unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Instrumentation / emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          disk-size: 3072M
+          ram-size: 1536M
+          profile: pixel_2
+          disable-animations: true
+          emulator-boot-timeout: 480
+          script: gradle connectedDebugAndroidTest --no-daemon --stacktrace
+      - name: Store emulator reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-v025-baseline-emulator-reports
+          path: |
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+          if-no-files-found: warn
