@@ -1,0 +1,58 @@
+name: Feedback12 Android emulator UI and analytics
+on:
+  push:
+    branches: [qa/v025-feedback-ui-media-20261024]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [26, 30]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Restore full source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .qa/feedback12-source.part1.b64 .qa/feedback12-source.part2.b64 | base64 -d > /tmp/source.tar.xz
+          echo '0c329cc679aefd57c6302d37fc1f2ae7eeaefbb4314b6f5ef5688dcdc466bec9  /tmp/source.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/source.tar.xz
+      - name: Android SDK
+        shell: bash
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort | tail -n 1)"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Emulator instrumentation
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          arch: x86_64
+          profile: pixel_2
+          disk-size: 2048M
+          ram-size: 1536M
+          disable-animations: true
+          emulator-boot-timeout: 480
+          script: |
+            adb shell input keyevent 82 || true
+            gradle connectedDebugAndroidTest --no-daemon --stacktrace
+      - name: Instrumentation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feedback12-api-${{ matrix.api }}-android-tests
+          path: |
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+          if-no-files-found: warn
