@@ -1,0 +1,68 @@
+name: Telegram Archive R4 QA APK
+on:
+  push:
+    branches:
+      - qa/r4-dual-chat-apk-20261025
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore and verify complete R4 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .qa/r4-source.part{1,2,3,4,5}.b64 | base64 -d > /tmp/ta-r4-source.tar.xz
+          echo "472ec436716929ce4fda36cbea5cc5de9978e58c82e48244e5643c208538c1ec  /tmp/ta-r4-source.tar.xz" | sha256sum -c -
+          tar -tJf /tmp/ta-r4-source.tar.xz > /tmp/source-list.txt
+          test "$(wc -l </tmp/source-list.txt)" -eq 115
+          rm -rf app
+          tar -xJf /tmp/ta-r4-source.tar.xz
+          test -f app/src/main/java/org/openarchive/telegram/DualChatRepository.java
+          test -f app/src/main/java/org/openarchive/telegram/SharedMemories.java
+          test -f app/src/main/java/org/openarchive/telegram/MainActivity.java
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Install Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Assemble QA APK and run JVM tests
+        run: gradle assembleDebug testDebugUnitTest --no-daemon --stacktrace
+      - name: Verify APK and offline manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$apk"
+          unzip -t "$apk" | tail -1
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" >/tmp/apk-info.txt
+          grep -q "package: name='org.openarchive.telegram.qa'" /tmp/apk-info.txt
+          if grep -q "uses-permission: name='android.permission.INTERNET'" /tmp/apk-info.txt; then
+            echo "FAIL: unexpected Internet permission"
+            exit 1
+          fi
+          sha256sum "$apk" | tee app-debug.sha256
+      - name: Publish APK and test evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: telegram-archive-r4-qa-apk
+          if-no-files-found: warn
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app-debug.sha256
+            app/build/test-results/testDebugUnitTest/
+            app/build/reports/tests/testDebugUnitTest/
