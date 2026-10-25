@@ -1,0 +1,75 @@
+name: Telegram Archive 0.48 - Offline Lexical Search QA
+on:
+  push:
+    branches: [qa/v048-offline-lexical-search-20261026]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore proven 0.47 source and apply reviewed 0.48 change
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'd3a1bad3706dbd0b3f807671f3c63feee1f66a521f48477720c4cfc0f6650da0  .qa/v047-release-source.tar.xz' | sha256sum -c -
+          rm -rf app
+          tar -xJf .qa/v047-release-source.tar.xz
+          base64 -d .qa/v048.patch.gz.b64 >/tmp/v048.patch.gz
+          echo '424c3d6d27e32c32937fd358197980a7b9ab6a782d1ba0ad23b1f025b6baa9a2  /tmp/v048.patch.gz' | sha256sum -c -
+          gzip -dc /tmp/v048.patch.gz | patch -p1 --batch --forward
+          grep -q 'versionCode 48' app/build.gradle
+          grep -q "versionName '0.48'" app/build.gradle
+          grep -q "applicationIdSuffix '.preview48'" app/build.gradle
+          test -s app/src/main/java/org/openarchive/telegram/OfflineSynonymSearch.java
+          grep -q 'Показывать и близкие темы' app/src/main/java/org/openarchive/telegram/MainActivity.java
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Run real SQLite FTS4 synonym and ambiguity integration tests
+        run: python3 qa/host_tests/test_search048_sqlite.py
+      - name: Stress-test SQLite index with 200001 synthetic messages
+        run: python3 qa/host_tests/fts4_sqlite_stress.py
+      - name: Build compact APK and run Gradle JVM tests
+        run: gradle assembleCompactQa testCompactQaUnitTest --no-daemon --stacktrace
+      - name: Verify APK package and offline manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p qa-output
+          cp app/build/outputs/apk/compactQa/app-compactQa.apk qa-output/TelegramArchive_0.48.apk
+          apk=qa-output/TelegramArchive_0.48.apk
+          test -s "$apk"
+          unzip -t "$apk" | tail -1
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" > qa-output/badging.txt
+          grep -q "package: name='org.openarchive.telegram.qa.preview48'" qa-output/badging.txt
+          grep -q "versionName='0.48'" qa-output/badging.txt
+          if grep -q "uses-permission: name='android.permission.INTERNET'" qa-output/badging.txt; then
+            echo 'Unexpected INTERNET permission'; exit 1
+          fi
+          sha256sum "$apk" > qa-output/SHA256SUMS.txt
+          wc -c "$apk"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: TelegramArchive-0.48-Offline-Search-APK
+          if-no-files-found: warn
+          path: |
+            qa-output/
+            app/build/test-results/testCompactQaUnitTest/
