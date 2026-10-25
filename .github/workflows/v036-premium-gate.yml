@@ -1,0 +1,96 @@
+name: Telegram Archive v036 Premium Release Gate
+on:
+  push:
+    branches: [qa/v036-premium-polish-20261025]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Restore exact Premium source and verify hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .qa/v036-source.part{1,2,3,4}.b64 | base64 -d >/tmp/ta-v036.tar.xz
+          echo 'd16c8af59c78daf34b76b7721dee7e9f72846ab4eb1bef3a8f388ff6b3d713b8  /tmp/ta-v036.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/ta-v036.tar.xz
+      - name: Install compile SDK
+        shell: bash
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Compile release candidate and test units
+        run: gradle assembleDebug assembleDebugAndroidTest testDebugUnitTest --no-daemon --stacktrace
+      - name: Verify APK manifest has no internet permission
+        shell: bash
+        run: |
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          "$AAPT" dump badging app/build/outputs/apk/debug/app-debug.apk > /tmp/manifest.txt
+          if grep -q 'uses-permission: name=.android.permission.INTERNET.' /tmp/manifest.txt; then
+            echo 'NETWORK PERMISSION DETECTED' >&2; exit 1
+          fi
+          head -n 12 /tmp/manifest.txt
+      - name: Preserve APK and test evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: telegram-archive-v036-premium-qa-apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            app/build/test-results/
+            app/build/reports/tests/
+          if-no-files-found: warn
+  emulator:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Restore identical source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .qa/v036-source.part{1,2,3,4}.b64 | base64 -d > /tmp/ta-v036.tar.xz
+          echo 'd16c8af59c78daf34b76b7721dee7e9f72846ab4eb1bef3a8f388ff6b3d713b8  /tmp/ta-v036.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/ta-v036.tar.xz
+      - name: Device smoke, migration and TGS renderer (Android 8)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 26
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 2048M
+          disk-size: 3072M
+          disable-animations: true
+          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: gradle connectedDebugAndroidTest --no-daemon --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=org.openarchive.telegram.UiSmokeTest,org.openarchive.telegram.PortableRestoreRegressionTest,org.openarchive.telegram.MediaTabsIsolationTest,org.openarchive.telegram.TgsRenderingIntegrationTest
+      - name: Preserve device evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-archive-v036-device-evidence
+          path: |
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+          if-no-files-found: warn
