@@ -38,7 +38,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
       - name: Assemble QA APK and run JVM tests
         run: gradle assembleDebug testDebugUnitTest --no-daemon --stacktrace
       - name: Verify APK and offline manifest
