@@ -1,0 +1,105 @@
+name: Telegram Archive 0.43 - offline font studio QA
+on:
+  push:
+    branches: [qa/v043-local-fonts-20261025]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore validated R6, then apply 0.41 changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .qa/r4-source.part{1,2,3,4,5}.b64 | base64 -d > /tmp/ta-r4.tar.xz
+          echo "472ec436716929ce4fda36cbea5cc5de9978e58c82e48244e5643c208538c1ec  /tmp/ta-r4.tar.xz" | sha256sum -c -
+          rm -rf app
+          tar -xJf /tmp/ta-r4.tar.xz
+          python3 .qa/r5_apply.py
+          python3 .qa/r6_premium_apply.py
+          base64 -d .qa/v041-delta.tar.gz.b64 > /tmp/v041-delta.tar.gz
+          echo "ef35b1e7aa3f49f27efa6c58466807411a8330303fdfe64a7ea9bd39273c326e  /tmp/v041-delta.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/v041-delta.tar.gz
+          # R6 CI build.gradle differs only in dependency alignment from the archived local copy.
+          # Apply every source and manifest diff, then change version fields explicitly.
+          awk '/^--- a\/app\/build.gradle$/{exit} {print}' r7-changes.patch | patch -p1 --batch
+          sed -i "s/versionCode 40/versionCode 41/; s/versionName '0.40-qa-r6'/versionName '0.41'/; s/applicationIdSuffix '.compact'/applicationIdSuffix '.preview41'/; s/versionNameSuffix '-compact'/versionNameSuffix ''/" app/build.gradle
+          grep -q "versionCode 41" app/build.gradle
+          grep -q "applicationIdSuffix '.preview41'" app/build.gradle
+          test -f app/src/main/java/org/openarchive/telegram/DemoChatActivity.java
+          test -f app/src/test/java/org/openarchive/telegram/DemoConversationTest.java
+      - name: Restore checked-in synthetic tutorial assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d .qa/v042_demo_media.b64 | tar -xz
+          test -s app/src/main/assets/tutorial/clip.mp4
+          test -s app/src/main/assets/tutorial/voice.ogg
+          test -s app/src/main/assets/tutorial/photo.jpg
+      - name: Apply reviewed 0.42 discovery patch and check version
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .qa/v042_apply.py
+          grep -q "versionCode 42" app/build.gradle
+          grep -q "versionName '0.42'" app/build.gradle
+          grep -q "applicationIdSuffix '.preview42'" app/build.gradle
+          test -f app/src/main/java/org/openarchive/telegram/DiscoveryRules.java
+          test -f app/src/test/java/org/openarchive/telegram/DiscoveryRulesTest.java
+      - name: Apply offline font studio 0.43
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .qa/v043_fonts_apply.py
+          grep -q 'versionCode 43' app/build.gradle
+          grep -q "versionName '0.43'" app/build.gradle
+          grep -q "applicationIdSuffix '.preview43'" app/build.gradle
+          test -s app/src/main/java/org/openarchive/telegram/FontManager.java
+          test -s app/src/main/java/org/openarchive/telegram/FontStyler.java
+          test -s app/src/main/java/org/openarchive/telegram/FontDialog.java
+          test -s app/src/test/java/org/openarchive/telegram/FontPolicyTest.java
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Build single optimized APK and run JVM tests
+        run: gradle assembleCompactQa testCompactQaUnitTest --no-daemon --stacktrace
+      - name: Check package, no Internet and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p qa-output
+          cp app/build/outputs/apk/compactQa/app-compactQa.apk qa-output/TelegramArchive_0.43.apk
+          apk=qa-output/TelegramArchive_0.43.apk
+          test -s "$apk"
+          unzip -t "$apk" | tail -1
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" > qa-output/apk-badging.txt
+          grep -q "package: name='org.openarchive.telegram.qa.preview43'" qa-output/apk-badging.txt
+          grep -q "versionName='0.43'" qa-output/apk-badging.txt
+          if grep -q "uses-permission: name='android.permission.INTERNET'" qa-output/apk-badging.txt; then
+             echo 'Unexpected INTERNET permission';exit 1
+          fi
+          sha256sum "$apk" > qa-output/SHA256SUMS.txt
+          wc -c "$apk"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: TelegramArchive-0.43-font-studio-APK
+          if-no-files-found: warn
+          path: |
+            qa-output/
+            app/build/test-results/testCompactQaUnitTest/
