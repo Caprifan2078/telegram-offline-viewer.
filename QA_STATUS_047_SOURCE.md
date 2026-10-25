@@ -1,0 +1,2 @@
+# Telegram Archive 0.47 FTS synonyms QA
+This branch contains a private, reproducible source tar.xz snapshot (SHA-256 d3a1bad3706dbd0b3f807671f3c63feee1f66a521f48477720c4cfc0f6650da0). It has source-only improvements to offline cross-chat SQLite FTS4 with curated synonyms, explicit original-message jumps and a help chapter. Never upload private archives, photos, or user recordings. No change to main. CI must pass before claiming installable APK. Android device playback checks remain open.
