@@ -19,6 +19,8 @@ replace="""    buildTypes {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17"""
 assert text.count(needle)==1
+assert text.count("versionCode 38")==1 and text.count("versionName '0.38-qa-r4'")==1
+text=text.replace("versionCode 38","versionCode 39").replace("versionName '0.38-qa-r4'","versionName '0.39-qa-r5'")
 build.write_text(text.replace(needle,replace),encoding="utf-8")
 (root/"app/proguard-rules.pro").write_text("""# Conservative R8 first pass: keep application names/models while shrinking
 # unused third-party code. Relax only after Android device regression.
