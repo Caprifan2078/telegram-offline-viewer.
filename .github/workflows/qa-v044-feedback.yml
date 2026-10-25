@@ -57,7 +57,7 @@ jobs:
           python3 .qa/v043_fonts_apply.py
           grep -q 'versionCode 43' app/build.gradle
           grep -q "versionName '0.43'" app/build.gradle
-          grep -q "applicationIdSuffix '.preview44'" app/build.gradle
+          grep -q "applicationIdSuffix '.preview43'" app/build.gradle
           test -s app/src/main/java/org/openarchive/telegram/FontManager.java
           test -s app/src/main/java/org/openarchive/telegram/FontStyler.java
           test -s app/src/main/java/org/openarchive/telegram/FontDialog.java
