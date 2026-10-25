@@ -29,7 +29,7 @@ jobs:
           awk '/^--- a\/app\/build.gradle$/{exit} {print}' r7-changes.patch | patch -p1 --batch
           sed -i "s/versionCode 40/versionCode 41/; s/versionName '0.40-qa-r6'/versionName '0.41'/; s/applicationIdSuffix '.compact'/applicationIdSuffix '.preview41'/; s/versionNameSuffix '-compact'/versionNameSuffix ''/" app/build.gradle
           grep -q "versionCode 41" app/build.gradle
-          grep -q "applicationIdSuffix '.preview42'" app/build.gradle
+          grep -q "applicationIdSuffix '.preview41'" app/build.gradle
           test -f app/src/main/java/org/openarchive/telegram/DemoChatActivity.java
           test -f app/src/test/java/org/openarchive/telegram/DemoConversationTest.java
       - name: Restore checked-in synthetic tutorial assets
