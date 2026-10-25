@@ -24,8 +24,10 @@ jobs:
           base64 -d .qa/v041-delta.tar.gz.b64 > /tmp/v041-delta.tar.gz
           echo "0352cfac44620613b387b92fb1549feab071b19486b684bf6a94924511f18f00  /tmp/v041-delta.tar.gz" | sha256sum -c -
           tar -xzf /tmp/v041-delta.tar.gz
-          patch -p1 --batch < r7-changes.patch
-          sed -i "s/versionNameSuffix '-compact'/versionNameSuffix ''/" app/build.gradle
+          # R6 CI build.gradle differs only in dependency alignment from the archived local copy.
+          # Apply every source and manifest diff, then change version fields explicitly.
+          awk '/^--- a\/app\/build.gradle$/{exit} {print}' r7-changes.patch | patch -p1 --batch
+          sed -i "s/versionCode 40/versionCode 41/; s/versionName '0.40-qa-r6'/versionName '0.41'/; s/applicationIdSuffix '.compact'/applicationIdSuffix '.preview41'/; s/versionNameSuffix '-compact'/versionNameSuffix ''/" app/build.gradle
           grep -q "versionCode 41" app/build.gradle
           grep -q "applicationIdSuffix '.preview41'" app/build.gradle
           test -f app/src/main/java/org/openarchive/telegram/DemoChatActivity.java
