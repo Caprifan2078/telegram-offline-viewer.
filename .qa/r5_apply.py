@@ -24,6 +24,8 @@ build.write_text(text.replace(needle,replace),encoding="utf-8")
 # unused third-party code. Relax only after Android device regression.
 -keep class org.openarchive.telegram.** { *; }
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
+# Okio references the optional JSR-305 Nullable marker at compile time.
+-dontwarn javax.annotation.Nullable
 """,encoding="utf-8")
 pkg=root/"app/src/main/java/org/openarchive/telegram"
 (pkg/"ConversationGapNavigator.java").write_text("""package org.openarchive.telegram;
