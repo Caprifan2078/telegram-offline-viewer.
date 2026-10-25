@@ -64,7 +64,7 @@ final class ConversationGapNavigator {
 main=pkg/"MainActivity.java"
 src=main.read_text(encoding="utf-8")
 point="    /** Drawer sections expose one clear destination per action and avoid repeating settings. */"
-method="""    /** Read-only conversation pauses. Quiet days are not evidence of missing messages. */
+method=r"""    /** Read-only conversation pauses. Quiet days are not evidence of missing messages. */
     private void showConversationPauses(){
         final String chatKey=activeKey;
         final MessageDb source=db;
