@@ -1,0 +1,50 @@
+name: v037 Android TGS and Portable Restore Smoke
+on:
+  workflow_dispatch:
+  push:
+    branches: [qa/v037-sticker-import-regression-20261025]
+permissions:
+  contents: read
+jobs:
+  device:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Restore v036 source plus importer regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp app/src/main/java/org/openarchive/telegram/TelegramImporter.java /tmp/TelegramImporter.java
+          cat .qa/v036-source.part{1,2,3,4}.b64 | base64 -d > /tmp/source.tar.xz
+          echo 'd16c8af59c78daf34b76b7721dee7e9f72846ab4eb1bef3a8f388ff6b3d713b8  /tmp/source.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/source.tar.xz
+          cp /tmp/TelegramImporter.java app/src/main/java/org/openarchive/telegram/TelegramImporter.java
+      - name: Run TGS drawing, media tabs and backup restoration on Android 9
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 28
+          arch: x86_64
+          target: google_apis
+          profile: pixel_2
+          ram-size: 1536M
+          disk-size: 2048M
+          disable-animations: true
+          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: gradle connectedDebugAndroidTest --no-daemon --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=org.openarchive.telegram.TgsRenderingIntegrationTest,org.openarchive.telegram.MediaTabsIsolationTest,org.openarchive.telegram.PortableRestoreRegressionTest
+      - name: Save device evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ta-v037-device-evidence
+          path: |
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+          if-no-files-found: warn
