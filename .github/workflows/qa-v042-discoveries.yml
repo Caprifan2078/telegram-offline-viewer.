@@ -1,7 +1,5 @@
 name: Telegram Archive 0.42 - discovery suite APK
 on:
-  push:
-    branches: [qa/v042-discoveries-20261025]
   workflow_dispatch:
 permissions:
   contents: read
