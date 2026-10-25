@@ -122,7 +122,7 @@ final class BackupVerifier {
             }else{
                 report.chats++;
                 // Optional tables did not exist in the earliest backup versions.
-                for(String[] tbl:new String[][]{{"conversation_periods","periods"},
+                for(String[] tbl:new String[][]{{"conversation_periods","periods"},{"calendar_periods","periods"},
                         {"relationship_events","events"},{"media_collections","collections"}}){
                     try(Cursor exists=db.rawQuery("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",new String[]{tbl[0]})){
                         if(exists.moveToFirst())try(Cursor c=db.rawQuery("SELECT COUNT(*) FROM "+tbl[0],null)){

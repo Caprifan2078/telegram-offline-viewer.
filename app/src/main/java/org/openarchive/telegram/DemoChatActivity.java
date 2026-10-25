@@ -72,7 +72,7 @@ public final class DemoChatActivity extends Activity {
     @Override public void onCreate(Bundle state){super.onCreate(state);FontStyler.bind(this);audio=(android.media.AudioManager)getSystemService(AUDIO_SERVICE);draw();}
     private void draw(){
         stopAudio();
-        LinearLayout root=column();root.setBackgroundColor(BG);setContentView(root);
+        LinearLayout root=column();root.setBackgroundColor(BG);root.setFitsSystemWindows(true);setContentView(root);
         LinearLayout bar=new LinearLayout(this);bar.setPadding(px(12),px(16),px(12),px(12));
         bar.setGravity(Gravity.CENTER_VERTICAL);bar.setBackground(bg(PANEL,0));root.addView(bar);
         Button back=button("‹");bar.addView(back,new LinearLayout.LayoutParams(px(48),px(50)));

@@ -1145,7 +1145,7 @@ public class MainActivity extends Activity {
                         TextView name=text("⌕ "+chapter.title,14,ACCENT);card.addView(name);
                         results.addView(card,p(-1,-2));
                         card.setOnClickListener(v->{int[] path=HelpCatalog.findChapter(id);
-                            if(path==null)return;helpCategory=path[0];helpShelf=path[1];helpChapter=id;renderHelpPage();});
+                            if(path==null)return;helpCategory=path[0];helpShelf=-1;helpChapter=id;renderHelpPage();});
                     }
                     if(matches.isEmpty()){TextView empty=text("Совпадений нет",13,SUB);results.addView(empty);}
                 }
@@ -1509,11 +1509,11 @@ public class MainActivity extends Activity {
     }
     private void showConversationInfo(){
         new FontDialog.Builder(this).setTitle(activeName)
-            .setItems(new String[]{"▦ Медиатека","⌕ Поиск сообщений","▥ Анализ переписки","⚙ Оформление переписки"},(d,i)->{
+            .setItems(new String[]{"▦ Медиатека","⌕ Поиск сообщений","▥ Анализ переписки","⚙ Оформление переписки","Локальный профиль и заметка"},(d,i)->{
                 if(i==0)screen="media";
                 else if(i==1)screen="search";
                 else if(i==2)screen="analytics";
-                else {settingsMenu();return;}
+                else if(i==3){settingsMenu();return;}else{editLocalProfile();return;}
                 showPage();
             }).show();
     }
@@ -2673,7 +2673,7 @@ public class MainActivity extends Activity {
         form.addView(note,p(-1,-2));
         AlertDialog dialog=new FontDialog.Builder(this).setTitle("Новый этап истории")
             .setMessage("Этап хранится только на устройстве. Название выбираешь ты, приложение не оценивает отношения.")
-            .setView(form).setNegativeButton("Отмена",null).setPositiveButton("Сохранить",null).create();
+            .setNeutralButton("Как это работает",(d,w)->openHelpChapter(21)).setView(form).setNegativeButton("Отмена",null).setPositiveButton("Сохранить",null).create();
         dialog.setOnShowListener(ignored->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
             final String label=name.getText().toString().trim(),comment=note.getText().toString().trim();
             try{ConversationPeriods.validate(label,comment,start,end);}catch(IllegalArgumentException e){name.setError(e.getMessage());return;}
@@ -2708,7 +2708,7 @@ public class MainActivity extends Activity {
         TextView explain=text("Событие привяжется к выбранному сообщению. Переписка не меняется. После сохранения можно прикрепить фото, видео, кружки, голосовые и файлы ИЗ ЭТОГО АРХИВА.",12,SUB);
         form.addView(explain);
         new FontDialog.Builder(this).setTitle("♡ Событие в истории")
-            .setView(form).setNegativeButton("Отмена",null).setPositiveButton("Сохранить",(dialog,which)->{
+            .setNeutralButton("Как это работает",(d,w)->openHelpChapter(24)).setView(form).setNegativeButton("Отмена",null).setPositiveButton("Сохранить",(dialog,which)->{
                 String label=name.getText().toString(),note=description.getText().toString();
                 if(label.trim().isEmpty()){toast("Название не может быть пустым");return;}
                 final MessageDb source=db;final String key=activeKey;
@@ -3171,6 +3171,55 @@ public class MainActivity extends Activity {
             });
         });
     }
+    private void openHelpChapter(int chapter){showHelp();int[] path=HelpCatalog.findChapter(chapter);if(path!=null){helpCategory=path[0];helpShelf=-1;helpChapter=chapter;renderHelpPage();}}
+    private void editLocalProfile(){
+        final MessageDb source=db;final String key=activeKey;
+        worker.execute(()->{String[] profile=source.localProfile();runOnUiThread(()->{
+            if(!key.equals(activeKey)||isFinishing())return;
+            LinearLayout form=column();form.setPadding(px(18),px(8),px(18),px(8));
+            String[] labels={"Отображаемое имя","@username (локальная подпись)","Личная заметка"};EditText[] fields=new EditText[3];
+            for(int i=0;i<3;i++){fields[i]=new EditText(this);fields[i].setHint(labels[i]);fields[i].setText(profile[i]);fields[i].setTextColor(FG);fields[i].setHintTextColor(SUB);fields[i].setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(i==2?1500:80)});form.addView(fields[i]);}
+            new FontDialog.Builder(this).setTitle("Локальный профиль").setMessage("Только для этого архива. Не меняет Telegram или сообщения. Входит в полную резервную копию.")
+                .setView(form).setNegativeButton("Отмена",null).setPositiveButton("Сохранить",(dialog,which)->{
+                    String name=fields[0].getText().toString(),username=fields[1].getText().toString(),note=fields[2].getText().toString();
+                    worker.execute(()->{try{source.saveLocalProfile(name,username,note);runOnUiThread(()->toast("Профиль сохранён локально"));}catch(Exception error){runOnUiThread(()->toast("Не сохранено: "+error.getMessage()));}});
+                }).show();
+        });});
+    }
+    private void editCalendarPeriod(CalendarPeriod old){
+        final MessageDb source=db;final String key=activeKey;
+        LinearLayout form=column();form.setPadding(px(18),px(8),px(18),px(8));
+        EditText name=new EditText(this);name.setHint("Название периода");name.setTextColor(FG);name.setHintTextColor(SUB);name.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(80)});form.addView(name);
+        EditText note=new EditText(this);note.setHint("Описание (необязательно)");note.setTextColor(FG);note.setHintTextColor(SUB);note.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(1500)});form.addView(note);
+        String today=LocalDate.now().toString();final String[] dates={old==null?today:old.start,old==null?today:old.end};
+        if(old!=null){name.setText(old.name);note.setText(old.note);}
+        for(int i=0;i<2;i++){final int index=i;Button date=btn((i==0?"Начало: ":"Конец: ")+dates[i]);form.addView(date);
+            date.setOnClickListener(v->{LocalDate chosen=LocalDate.parse(dates[index]);new android.app.DatePickerDialog(this,(picker,y,m,d)->{dates[index]=LocalDate.of(y,m+1,d).toString();date.setText((index==0?"Начало: ":"Конец: ")+dates[index]);},chosen.getYear(),chosen.getMonthValue()-1,chosen.getDayOfMonth()).show();});}
+        android.app.AlertDialog dialog=new FontDialog.Builder(this).setTitle(old==null?"Новый календарный период":"Изменить период")
+            .setMessage("Любые календарные даты, даже до начала переписки. Это личная отметка, она не создаёт сообщений.")
+            .setView(form).setNegativeButton("Отмена",null).setPositiveButton("Сохранить",null).create();
+        dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->{
+            try{CalendarPeriod period=new CalendarPeriod(old==null?0:old.id,name.getText().toString(),note.getText().toString(),dates[0],dates[1]);
+                dialog.getButton(-1).setEnabled(false);
+                worker.execute(()->{try{source.saveCalendarPeriod(period);runOnUiThread(()->{dialog.dismiss();if(key.equals(activeKey)&&"chronology".equals(screen))renderChronologyPage();});}
+                    catch(Exception error){runOnUiThread(()->{dialog.getButton(-1).setEnabled(true);toast("Не сохранено: "+error.getMessage());});}});
+            }catch(Exception invalid){toast(invalid.getMessage());}
+        }));dialog.show();
+    }
+    private void renderCalendarPeriods(LinearLayout container,MessageDb source,String key,int token){
+        worker.execute(()->{try{List<CalendarPeriod> periods=source.calendarPeriods();runOnUiThread(()->{
+            if(token!=loadToken||!key.equals(activeKey)||isFinishing())return;
+            if(periods.isEmpty())analyticsText(container,"Календарных периодов нет. Можно добавить даты вне переписки.",SUB,13);
+            for(CalendarPeriod period:periods){
+                LinearLayout card=column();card.setPadding(px(12),px(12),px(12),px(12));card.setBackground(shape(PANEL,16));container.addView(card,p(-1,-2));
+                analyticsText(card,period.name,FG,17);analyticsText(card,period.start+" — "+period.end,ACCENT,14);
+                if(!period.note.isEmpty())analyticsText(card,period.note,FG,14);
+                Button edit=btn("Изменить даты / описание");card.addView(edit);edit.setOnClickListener(v->editCalendarPeriod(period));
+                Button remove=btn("Удалить период");card.addView(remove);remove.setOnClickListener(v->new FontDialog.Builder(this).setTitle("Удалить период?")
+                    .setMessage("Удалится только личная отметка. Переписка останется.").setNegativeButton("Отмена",null).setPositiveButton("Удалить",(d,w)->worker.execute(()->{source.deleteCalendarPeriod(period.id);runOnUiThread(()->{if(key.equals(activeKey))renderChronologyPage();});})).show());
+            }
+        });}catch(Exception error){runOnUiThread(()->{if(token==loadToken)analyticsText(container,"Не удалось прочитать периоды",SUB,14);});}});
+    }
     private void renderChronologyPage(){
         int token=++loadToken;
         if(home){screen="chat";showPage();return;}
@@ -3186,6 +3235,8 @@ public class MainActivity extends Activity {
         list.addView(twoChats,p(-1,48));twoChats.setOnClickListener(v->chooseDualChat("dual_memories"));
         TextView how=text("Как создать этап: открой «Переписка» → удерживай первое сообщение → «Отметить начало периода». Затем отметь конец в другом сообщении, придумай название и сохрани.",14,FG);
         how.setPadding(px(12),px(15),px(12),px(15));how.setBackground(glass(PANEL,14));list.addView(how,p(-1,-2));
+        Button addCalendar=btn("+ Календарный период · любые даты");list.addView(addCalendar,p(-1,-2));addCalendar.setOnClickListener(v->editCalendarPeriod(null));
+        LinearLayout calendar=column();list.addView(calendar,p(-1,-2));renderCalendarPeriods(calendar,db,activeKey,token);
         final MessageDb source=db, initial=db;final String archive=activeKey;
         worker.execute(()->{
             try{

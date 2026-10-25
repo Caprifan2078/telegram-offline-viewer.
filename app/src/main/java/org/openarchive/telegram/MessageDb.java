@@ -21,7 +21,7 @@ class MessageDb extends SQLiteOpenHelper {
     static final class Attachment {
         long id,messageId; String path,kind,author,date,body;
     }
-    MessageDb(Context ctx,String key){super(ctx,"default".equals(key)?"telegram_archive.db":"telegram_"+key+".db",null,12);}
+    MessageDb(Context ctx,String key){super(ctx,"default".equals(key)?"telegram_archive.db":"telegram_"+key+".db",null,13);}
     @Override public void onConfigure(SQLiteDatabase d){super.onConfigure(d);d.enableWriteAheadLogging();}
     @Override public void onCreate(SQLiteDatabase d){
         d.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY,author TEXT,date_text TEXT,body TEXT,media TEXT,media_type TEXT,body_fold TEXT,author_fold TEXT)");
@@ -33,6 +33,34 @@ class MessageDb extends SQLiteOpenHelper {
         collectionTables(d);
         timelineTables(d);
         relationshipTables(d);
+        localProfileTables(d);
+    }
+    private void localProfileTables(SQLiteDatabase d){
+        d.execSQL("CREATE TABLE IF NOT EXISTS calendar_periods (id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,note TEXT NOT NULL,start_date TEXT NOT NULL,end_date TEXT NOT NULL)");
+        d.execSQL("CREATE TABLE IF NOT EXISTS local_profile (id INTEGER PRIMARY KEY CHECK(id=1),display_name TEXT NOT NULL,username TEXT NOT NULL,note TEXT NOT NULL)");
+    }
+    java.util.List<CalendarPeriod> calendarPeriods(){
+        java.util.ArrayList<CalendarPeriod> out=new java.util.ArrayList<>();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,name,note,start_date,end_date FROM calendar_periods ORDER BY start_date,id",null)){
+            while(c.moveToNext())out.add(new CalendarPeriod(c.getLong(0),c.getString(1),c.getString(2),c.getString(3),c.getString(4)));
+        }return out;
+    }
+    long saveCalendarPeriod(CalendarPeriod period){
+        ContentValues v=new ContentValues();v.put("name",period.name);v.put("note",period.note);v.put("start_date",period.start);v.put("end_date",period.end);
+        if(period.id>0){if(getWritableDatabase().update("calendar_periods",v,"id=?",new String[]{String.valueOf(period.id)})!=1)throw new IllegalArgumentException("Период уже удалён");return period.id;}
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT COUNT(*) FROM calendar_periods",null)){if(c.moveToFirst()&&c.getInt(0)>=100)throw new IllegalArgumentException("Не больше 100 периодов");}
+        return getWritableDatabase().insertOrThrow("calendar_periods",null,v);
+    }
+    void deleteCalendarPeriod(long id){getWritableDatabase().delete("calendar_periods","id=?",new String[]{String.valueOf(id)});}
+    String[] localProfile(){
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT display_name,username,note FROM local_profile WHERE id=1",null)){
+            if(c.moveToFirst())return new String[]{c.getString(0),c.getString(1),c.getString(2)};
+        }return new String[]{"","",""};
+    }
+    void saveLocalProfile(String name,String username,String note){
+        if(name.length()>80||username.length()>80||note.length()>1500)throw new IllegalArgumentException("Имя / username: до 80 символов; заметка: до 1500");
+        ContentValues v=new ContentValues();v.put("id",1);v.put("display_name",name.trim());v.put("username",username.trim());v.put("note",note.trim());
+        getWritableDatabase().insertWithOnConflict("local_profile",null,v,SQLiteDatabase.CONFLICT_REPLACE);
     }
     private void mediaTables(SQLiteDatabase d){
         d.execSQL("CREATE TABLE IF NOT EXISTS attachments (id INTEGER PRIMARY KEY,message_id INTEGER NOT NULL,path TEXT NOT NULL,kind TEXT NOT NULL)");
@@ -179,6 +207,7 @@ class MessageDb extends SQLiteOpenHelper {
         if(old<9)collectionTables(d);
         if(old<11)timelineTables(d);
         if(old<12)relationshipTables(d);
+        if(old<13)localProfileTables(d);
         if(old<10){
             // Older synthetic/minimal databases may lack optional media tables.
             mediaTables(d);

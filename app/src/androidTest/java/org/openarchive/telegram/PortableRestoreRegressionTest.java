@@ -40,6 +40,8 @@ public class PortableRestoreRegressionTest {
             chat.toggleFavorite(messageId);chat.togglePinned(messageId);
             chat.addPeriod("Первая встреча","Обсудили будущий проект",
                 new ConversationPeriods.Boundary(messageId,0),new ConversationPeriods.Boundary(messageId,4));
+            chat.saveLocalProfile("Локальное имя","@training","Не отправлять в Telegram");
+            chat.saveCalendarPeriod(new CalendarPeriod(0,"До переписки","Учебный период","1990-01-01","1991-01-01"));
             chat.addRelationshipEvent("Событие","Важный момент",messageId,1);
             long quoteId=notes.addQuote("❝ sample quote — Example",key,messageId);
             long attachmentId=notes.add("Attached note","private-note.txt",Uri.fromFile(noteAttachment).toString(),"text/plain");
@@ -72,6 +74,8 @@ public class PortableRestoreRegressionTest {
                 assertEquals(1,copy.pinned().size());
                 assertEquals("Первая встреча",copy.periods().get(0).name);
                 assertEquals(1,copy.relationshipEvents().size());
+                assertEquals("@training",copy.localProfile()[1]);
+                assertEquals("1990-01-01",copy.calendarPeriods().get(0).start);
             }finally{copy.close();}
             boolean quoteRestored=false,attachmentRestored=false;
             for(SavedStore.Note note:notes.recent(200)){
