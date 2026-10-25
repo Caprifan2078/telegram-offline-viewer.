@@ -80,11 +80,16 @@ class TelegramImporter {
             if(!supported(path)||isPreview(path))continue;
             found.putIfAbsent(path,new Media(path,classify(path,el)));
         }
-        // Some Telegram sticker versions use direct media src without an anchor.
-        if(found.isEmpty())for(Element e:msg.select(".body .media_wrap img[src],.body .photo_wrap img[src],.body .sticker_wrap img[src]")){
+        // Some exports embed stickers as a direct src, without a downloadable anchor.
+        // Include native TGS/WebM stickers; avoid indexing photo previews twice.
+        for(Element e:msg.select(".body .media_wrap img[src],.body .photo_wrap img[src],.body .sticker_wrap img[src]")){
             String path=e.attr("src");
-            if(supported(path)&&!isPreview(path)&&isPicture(path))
-                found.putIfAbsent(path,new Media(path,classify(path,e)));
+            String low=path.toLowerCase(Locale.ROOT).split("[?#]",2)[0];
+            boolean sticker=e.closest(".sticker_wrap")!=null;
+            boolean nativeSticker=sticker&&(low.endsWith(".tgs")||low.endsWith(".webm"));
+            if(!supported(path)||isPreview(path)||(!isPicture(path)&&!nativeSticker))continue;
+            if(!found.isEmpty()&&!nativeSticker)continue;
+            found.putIfAbsent(path,new Media(path,classify(path,e)));
         }
         return new ArrayList<>(found.values());
     }
