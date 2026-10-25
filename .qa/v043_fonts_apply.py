@@ -88,8 +88,8 @@ final class FontManager {
             case "casual":return Typeface.create("casual",Typeface.NORMAL);
             case "light":return Typeface.create("sans-serif-light",Typeface.NORMAL);
             case "medium":return Typeface.create("sans-serif-medium",Typeface.NORMAL);
-            case "custom":try{return Typeface.createFromFile(customFile(c));}catch(Exception ignored){return null;}
-            default:return null; // System mode: leave Android's selected UI font untouched.
+            case "custom":try{return Typeface.createFromFile(customFile(c));}catch(Exception ignored){return Typeface.DEFAULT;}
+            default:return Typeface.DEFAULT; // Enforce the device UI default, including explicitly styled legacy buttons.
         }
     }
     static void importFile(Context c,Uri source) throws IOException {
