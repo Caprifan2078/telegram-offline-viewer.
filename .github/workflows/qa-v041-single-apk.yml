@@ -22,7 +22,7 @@ jobs:
           python3 .qa/r5_apply.py
           python3 .qa/r6_premium_apply.py
           base64 -d .qa/v041-delta.tar.gz.b64 > /tmp/v041-delta.tar.gz
-          echo "0352cfac44620613b387b92fb1549feab071b19486b684bf6a94924511f18f00  /tmp/v041-delta.tar.gz" | sha256sum -c -
+          echo "ef35b1e7aa3f49f27efa6c58466807411a8330303fdfe64a7ea9bd39273c326e  /tmp/v041-delta.tar.gz" | sha256sum -c -
           tar -xzf /tmp/v041-delta.tar.gz
           # R6 CI build.gradle differs only in dependency alignment from the archived local copy.
           # Apply every source and manifest diff, then change version fields explicitly.
