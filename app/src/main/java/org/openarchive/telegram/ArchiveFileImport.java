@@ -65,9 +65,11 @@ final class ArchiveFileImport {
             try(ZipInputStream zip=new ZipInputStream(new BufferedInputStream(source,128*1024))){
                 ZipEntry entry;byte[] bytes=new byte[128*1024];
                 while((entry=zip.getNextEntry())!=null){
-                    if(entry.getName()==null||entry.getName().endsWith("/")){zip.closeEntry();continue;}
-                    File file=safeFile(root,entry.getName());
-                    budget.next(entry.getName());
+                    String name=entry.getName();
+                    budget.next(name==null?"":name);
+                    BackupEntryPolicy.requireSafe(name,entry.isDirectory());
+                    if(entry.isDirectory()){zip.closeEntry();continue;}
+                    File file=safeFile(root,name);
                     if(entry.getSize()>MAX_ENTRY)throw new IOException("Слишком большой файл в ZIP");
                     File parent=file.getParentFile();if(!parent.isDirectory()&&!parent.mkdirs())throw new IOException("Не удалось создать каталог ZIP");
                     if(file.exists())throw new IOException("Повторное имя файла в архиве");
@@ -94,14 +96,21 @@ final class ArchiveFileImport {
                 OutputStream out=new BufferedOutputStream(new FileOutputStream(compressed))){
                 if(source==null)throw new IOException("RAR недоступен");
                 byte[] buffer=new byte[128*1024];int n;
-                while((n=source.read(buffer))!=-1)out.write(buffer,0,n);
+                long archiveBytes=0;
+                while((n=source.read(buffer))!=-1){
+                    archiveBytes+=n;
+                    if(archiveBytes>MAX_TOTAL)throw new IOException("Слишком большой исходный RAR");
+                    out.write(buffer,0,n);
+                }
             }
             try(Archive rar=new Archive(compressed)){
                 for(FileHeader entry:rar.getFileHeaders()){
+                    // Even skipped directories and links consume the bounded entry budget.
+                    String name=entry.getFileName();
+                    budget.next(name==null?"":name);
                     if(entry.isDirectory())continue;
                     if(entry.getRedirection()!=null)continue; // never materialize archive links
-                    String name=entry.getFileName();
-                    File target=safeFile(root,name);budget.next(name);
+                    File target=safeFile(root,name);
                     if(entry.getFullUnpackSize()>MAX_ENTRY)throw new IOException("Слишком большой файл в RAR");
                     File parent=target.getParentFile();
                     if(!parent.isDirectory()&&!parent.mkdirs())throw new IOException("Не удалось создать каталог RAR");

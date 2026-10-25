@@ -142,4 +142,147 @@ public class ArchiveIntegrationTest {
             new File(new File(ctx.getFilesDir(),"personal_images"),customName).delete();
         }
     }
+
+    /** Regression: an inconsistent outer manifest must not register any chat or alter
+     * existing preferences. This uses synthetic data and does not require personal media. */
+    @Test public void incompleteFullBackupDoesNotTouchRegistry() throws Exception {
+        Context ctx=InstrumentationRegistry.getInstrumentation().getTargetContext();
+        String id=UUID.randomUUID().toString().replace("-", "");
+        SharedPreferences prefs=ctx.getSharedPreferences("tg-corrupt-"+id,Context.MODE_PRIVATE);
+        final String original="[]";
+        assertTrue(prefs.edit().putString("archive_registry",original).commit());
+        File fake=new File(ctx.getCacheDir(),"incomplete-"+id+".zip");
+        try{
+            try(java.util.zip.ZipOutputStream zip=new java.util.zip.ZipOutputStream(new FileOutputStream(fake))){
+                zip.putNextEntry(new java.util.zip.ZipEntry("metadata.zip"));
+                zip.write("synthetic-placeholder".getBytes("UTF-8"));zip.closeEntry();
+                zip.putNextEntry(new java.util.zip.ZipEntry("full-manifest.json"));
+                zip.write("{\"format\":\"telegram-archive-full\",\"version\":2,\"chats\":[],\"files\":1,\"bytes\":3}".getBytes("UTF-8"));
+                zip.closeEntry();
+            }
+            try{
+                FullBackup.restore(ctx,prefs,android.net.Uri.fromFile(fake),msg->{});
+                fail("Incomplete media tree must be rejected before metadata restore");
+            }catch(IOException expected){
+                assertTrue(expected.getMessage().contains("медиа"));
+            }
+            assertEquals(original,prefs.getString("archive_registry",""));
+        }finally{
+            fake.delete();prefs.edit().clear().commit();
+        }
+    }
+
+    @Test public void mismatchedFullBackupRootsDoNotTouchRegistry() throws Exception {
+        Context ctx=InstrumentationRegistry.getInstrumentation().getTargetContext();
+        String id=UUID.randomUUID().toString().replace("-", "");
+        SharedPreferences prefs=ctx.getSharedPreferences("tg-roots-"+id,Context.MODE_PRIVATE);
+        final String original="[]";
+        assertTrue(prefs.edit().putString("archive_registry",original).commit());
+        File fake=new File(ctx.getCacheDir(),"wrong-roots-"+id+".zip");
+        try{
+            try(java.util.zip.ZipOutputStream zip=new java.util.zip.ZipOutputStream(new FileOutputStream(fake))){
+                zip.putNextEntry(new java.util.zip.ZipEntry("metadata.zip"));
+                zip.write("synthetic-placeholder".getBytes("UTF-8"));zip.closeEntry();
+                zip.putNextEntry(new java.util.zip.ZipEntry("full-manifest.json"));
+                zip.write("{\"format\":\"telegram-archive-full\",\"version\":2,\"chats\":[{\"chatIndex\":0,\"prefix\":\"media/chat-99/\"}],\"files\":0,\"bytes\":0}".getBytes("UTF-8"));
+                zip.closeEntry();
+            }
+            try{
+                FullBackup.restore(ctx,prefs,android.net.Uri.fromFile(fake),msg->{});
+                fail("Incorrect media root must be rejected before metadata restore");
+            }catch(IOException expected){
+                assertTrue(expected.getMessage().contains("каталогов"));
+            }
+            assertEquals(original,prefs.getString("archive_registry",""));
+        }finally{fake.delete();prefs.edit().clear().commit();}
+    }
+
+    @Test public void tamperedMediaHashRejectedBeforeRegistryChange() throws Exception {
+        Context ctx=InstrumentationRegistry.getInstrumentation().getTargetContext();
+        String id=UUID.randomUUID().toString().replace("-","");
+        SharedPreferences prefs=ctx.getSharedPreferences("sha-check-"+id,Context.MODE_PRIVATE);
+        assertTrue(prefs.edit().putString("archive_registry","[]").commit());
+        File fake=new File(ctx.getCacheDir(),"tampered-"+id+".zip");
+        try{
+            try(java.util.zip.ZipOutputStream zip=new java.util.zip.ZipOutputStream(new FileOutputStream(fake))){
+                zip.putNextEntry(new java.util.zip.ZipEntry("media/chat-0/photo.jpg"));
+                zip.write(new byte[]{1,2,3,4});zip.closeEntry();
+                zip.putNextEntry(new java.util.zip.ZipEntry("metadata.zip"));
+                zip.write("no-metadata".getBytes("UTF-8"));zip.closeEntry();
+                zip.putNextEntry(new java.util.zip.ZipEntry("full-manifest.json"));
+                zip.write(("{\"format\":\"telegram-archive-full\",\"version\":2,"+
+                    "\"chats\":[{\"chatIndex\":0,\"prefix\":\"media/chat-0/\"}],"+
+                    "\"files\":1,\"bytes\":4,\"mediaSha256\":\""+
+                    "0000000000000000000000000000000000000000000000000000000000000000\"}").getBytes("UTF-8"));
+                zip.closeEntry();
+            }
+            try{
+                FullBackup.restore(ctx,prefs,new FileInputStream(fake),msg->{});
+                fail("Tampered media transcript must be rejected");
+            }catch(IOException expected){assertTrue(expected.getMessage().contains("Контрольная сумма медиа"));}
+            assertEquals("[]",prefs.getString("archive_registry",""));
+            try(InputStream in=new FileInputStream(fake)){
+                BackupVerifier.verifyStream(in,msg->{});fail("Verifier must reject tampered media even if ZIP CRC is valid");
+            }catch(IOException expected){assertTrue(expected.getMessage().contains("Контрольная сумма медиа"));}
+        }finally{fake.delete();prefs.edit().clear().commit();}
+    }
+
+    @Test public void changedAvatarChecksumRejectedWithoutOverwritingSettings()throws Exception {
+        Context ctx=InstrumentationRegistry.getInstrumentation().getTargetContext();
+        String id=UUID.randomUUID().toString().replace("-","");
+        SharedPreferences prefs=ctx.getSharedPreferences("tg-custom-integrity-"+id,Context.MODE_PRIVATE);
+        assertTrue(prefs.edit().putString("archive_registry","[]").commit());
+        File zipFile=new File(ctx.getCacheDir(),"bad-avatar-"+id+".zip");
+        try{
+            MediaIntegrity empty=new MediaIntegrity();
+            try(java.util.zip.ZipOutputStream zip=new java.util.zip.ZipOutputStream(new FileOutputStream(zipFile))){
+                zip.putNextEntry(new java.util.zip.ZipEntry("metadata.zip"));
+                zip.write("invalid-metadata".getBytes("UTF-8"));zip.closeEntry();
+                zip.putNextEntry(new java.util.zip.ZipEntry("custom/avatar.jpg"));
+                zip.write(new byte[]{2,4,6,8});zip.closeEntry();
+                zip.putNextEntry(new java.util.zip.ZipEntry("full-manifest.json"));
+                String text="{\"format\":\"telegram-archive-full\",\"version\":2,"+
+                    "\"chats\":[],\"files\":0,\"bytes\":0,"+
+                    "\"mediaSha256\":\""+empty.hex()+"\","+
+                    "\"customSha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"}";
+                zip.write(text.getBytes("UTF-8"));zip.closeEntry();
+            }
+            try(InputStream in=new FileInputStream(zipFile)){
+                FullBackup.restore(ctx,prefs,in,msg->{});fail("Mutated avatar backup passed validation");
+            }catch(IOException expected){assertTrue(expected.getMessage().contains("аватаров"));}
+            assertEquals("[]",prefs.getString("archive_registry",""));
+        }finally{zipFile.delete();prefs.edit().clear().commit();}
+    }
+    @Test public void interruptedBackupStreamNeverPublishesRegistry()throws Exception {
+        Context ctx=InstrumentationRegistry.getInstrumentation().getTargetContext();
+        String id=UUID.randomUUID().toString().replace("-","");
+        SharedPreferences prefs=ctx.getSharedPreferences("tg-stream-cut-"+id,Context.MODE_PRIVATE);
+        assertTrue(prefs.edit().putString("archive_registry","[]").commit());
+        ByteArrayOutputStream encoded=new ByteArrayOutputStream();
+        try(java.util.zip.ZipOutputStream zip=new java.util.zip.ZipOutputStream(encoded)){
+            zip.putNextEntry(new java.util.zip.ZipEntry("media/chat-0/large.mp4"));
+            byte[] chunk=new byte[16384];new java.util.Random(49).nextBytes(chunk);
+            for(int i=0;i<10;i++)zip.write(chunk);
+            zip.closeEntry();
+        }
+        byte[] complete=encoded.toByteArray();
+        InputStream interrupted=new FilterInputStream(new ByteArrayInputStream(complete)){
+            int remaining=Math.max(128,complete.length/2);
+            @Override public int read(byte[] b,int off,int len)throws IOException{
+                if(remaining<=0)throw new IOException("Simulated network/storage interruption");
+                int read=super.read(b,off,Math.min(len,remaining));
+                if(read>0)remaining-=read;return read;
+            }
+            @Override public int read()throws IOException{
+                if(remaining<=0)throw new IOException("Simulated interruption");
+                int b=super.read();if(b!=-1)remaining--;return b;
+            }
+        };
+        try{
+            FullBackup.restore(ctx,prefs,interrupted,msg->{});
+            fail("Truncated archive unexpectedly restored");
+        }catch(IOException expected){assertNotNull(expected.getMessage());}
+        finally{assertEquals("[]",prefs.getString("archive_registry",""));prefs.edit().clear().commit();}
+    }
+
 }

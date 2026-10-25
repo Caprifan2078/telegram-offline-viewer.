@@ -25,6 +25,9 @@ final class PersonalImages {
     private static final LruCache<String,Bitmap> memory=new LruCache<String,Bitmap>(6*1024*1024){
         @Override protected int sizeOf(String key,Bitmap b){return b.getByteCount();}
     };
+    private static final LruCache<String,Bitmap> circles=new LruCache<String,Bitmap>(4*1024*1024){
+        @Override protected int sizeOf(String k,Bitmap b){return b.getByteCount();}
+    };
     private static final String DIR="personal_images";
     static String avatarKey(String chat,String user){
         return "person_avatar_"+chat+"_"+digest(user==null?"":user.trim().toLowerCase(java.util.Locale.ROOT));
@@ -63,8 +66,8 @@ final class PersonalImages {
                 if(!scaled.compress(Bitmap.CompressFormat.JPEG,85,out))throw new IOException("Ошибка сохранения JPEG");
                 out.getFD().sync();
             }finally{if(scaled!=original)scaled.recycle();}
-            if(dest.exists()&&!dest.delete())throw new IOException("Не удалось заменить старое фото");
-            if(!temp.renameTo(dest))throw new IOException("Не удалось сохранить выбранное фото");
+            if(dest.exists()){temp.delete();throw new IOException("Изображение с таким именем уже существует");}
+            if(!temp.renameTo(dest)){temp.delete();throw new IOException("Не удалось сохранить выбранное фото");}
             synchronized(memory){memory.remove(fileName);}
             return fileName;
         }finally{if(original!=null)original.recycle();}
@@ -78,6 +81,17 @@ final class PersonalImages {
         Bitmap loaded=BitmapFactory.decodeFile(source.getAbsolutePath(),opts);
         if(loaded==null)return null;
         synchronized(memory){memory.put(file,loaded);}return loaded;
+    }
+    static Bitmap circularCached(Context ctx,String file,int size){
+        if(file==null||size<1||size>512)return null;
+        String key=file+"|"+size;
+        synchronized(circles){Bitmap c=circles.get(key);if(c!=null&&!c.isRecycled())return c;}
+        Bitmap original=load(ctx,file);if(original==null)return null;
+        Bitmap result=circular(original,size);
+        synchronized(circles){Bitmap other=circles.get(key);
+            if(other!=null&&!other.isRecycled()){result.recycle();return other;}
+            circles.put(key,result);return result;
+        }
     }
     static Bitmap circular(Bitmap bitmap,int size){
         Bitmap image=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888);

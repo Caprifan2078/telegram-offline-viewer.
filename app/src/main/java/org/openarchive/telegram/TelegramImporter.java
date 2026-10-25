@@ -41,7 +41,8 @@ class TelegramImporter {
                         Element from=msg.selectFirst(".body .from_name");
                         Element date=msg.selectFirst(".body .date.details, .date.details");
                         Element content=msg.selectFirst(".body .text");
-                        if(from!=null&&!from.text().trim().isEmpty())authorCandidate=from.text().trim();
+                        boolean service=msg.hasClass("service");
+                        authorCandidate=TelegramAuthorPolicy.nextAuthor(authorCandidate,from==null?null:from.text(),service);
                         String when=date==null?"":date.hasAttr("title")?date.attr("title"):date.text();
                         String body=content==null?"":content.wholeText().trim();
                         if(body.isEmpty()&&content!=null)body=content.text();
@@ -52,7 +53,7 @@ class TelegramImporter {
                         }
                         if(!body.isEmpty()||!media.isEmpty()){
                             Media first=media.isEmpty()?null:media.get(0);
-                            long messageId=helper.stage(d,authorCandidate,when,body,first==null?null:first.path,first==null?"":first.kind);
+                            long messageId=helper.stage(d,TelegramAuthorPolicy.stageAuthor(authorCandidate,service),when,body,first==null?null:first.path,first==null?"":first.kind);
                             for(Media a:media){helper.stageAttachment(d,messageId,a.path,a.kind);medias++;}
                             written++;
                         }
@@ -88,7 +89,10 @@ class TelegramImporter {
             boolean sticker=e.closest(".sticker_wrap")!=null;
             boolean nativeSticker=sticker&&(low.endsWith(".tgs")||low.endsWith(".webm"));
             if(!supported(path)||isPreview(path)||(!isPicture(path)&&!nativeSticker))continue;
-            if(!found.isEmpty()&&!nativeSticker)continue;
+            // A linked image is normally a preview of the href asset already collected.
+            // Do not reject other independent, unlinked photos just because a media item exists.
+            Element anchor=e.closest("a[href]");
+            if(anchor!=null&&supported(anchor.attr("href"))&&!nativeSticker)continue;
             found.putIfAbsent(path,new Media(path,classify(path,e)));
         }
         return new ArrayList<>(found.values());
@@ -109,7 +113,7 @@ class TelegramImporter {
                 &&!low.contains("music")&&!low.contains("songs/"));
         boolean round=low.contains("round_video")||low.contains("video_message")||low.contains("video_note");
         boolean sticker=low.startsWith("stickers/")||low.contains("/stickers/")||low.matches(".*\\.tgs(?:[?#].*)?$");
-        boolean gif=low.matches(".*\\.gif(?:[?#].*)?$")||low.contains("/animations/")||low.contains("/gifs/")||low.contains("/animated/")||low.contains("animation")&&low.endsWith(".mp4");
+        boolean gif=low.matches(".*\\.gif(?:[?#].*)?$")||low.startsWith("animations/")||low.startsWith("gifs/")||low.startsWith("animated/")||low.contains("/animations/")||low.contains("/gifs/")||low.contains("/animated/")||low.contains("animation")&&low.endsWith(".mp4");
         for(Element p=node;p!=null;p=p.parent()){
             String cls=p.className().toLowerCase(Locale.ROOT);
             if(cls.contains("voice_message")||cls.contains("voice_note")||cls.contains("audio_message"))voice=true;
@@ -118,7 +122,7 @@ class TelegramImporter {
             if(cls.contains("gif")||cls.contains("animation")||cls.contains("animated"))gif=true;
             if(p.hasClass("message"))break;
         }
-        // Semantic Telegram class and folder beat physical file extension.
+        // Semantic media types take precedence over their physical container/extension.
         if(sticker)return "sticker";
         if("video".equals(base))return round?"round":gif?"gif":"video";
         if("audio".equals(base))return voice?"voice":"audio";
