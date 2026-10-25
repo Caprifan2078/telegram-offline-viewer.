@@ -104,9 +104,11 @@ class TelegramImporter {
     static String classify(String path,Element node){
         String low=path.toLowerCase(Locale.ROOT);
         String base=kindFromExtension(path);
-        boolean voice=low.contains("voice_messages")||low.contains("voice_message")||low.contains("audio_message")||low.contains("voice_note");
+        boolean voice=low.contains("voice_messages")||low.contains("voice_message")||low.contains("audio_message")||low.contains("voice_note")
+            || ((low.matches(".*\\.(ogg|opus)(?:[?#].*)?$")||low.endsWith(".ogg")||low.endsWith(".opus"))
+                &&!low.contains("music")&&!low.contains("songs/"));
         boolean round=low.contains("round_video")||low.contains("video_message")||low.contains("video_note");
-        boolean sticker=low.contains("sticker")||low.endsWith(".tgs")||low.endsWith(".webp")&&low.contains("stickers");
+        boolean sticker=low.startsWith("stickers/")||low.contains("/stickers/")||low.matches(".*\\.tgs(?:[?#].*)?$");
         boolean gif=low.matches(".*\\.gif(?:[?#].*)?$")||low.contains("/animations/")||low.contains("/gifs/")||low.contains("/animated/")||low.contains("animation")&&low.endsWith(".mp4");
         for(Element p=node;p!=null;p=p.parent()){
             String cls=p.className().toLowerCase(Locale.ROOT);
@@ -116,10 +118,11 @@ class TelegramImporter {
             if(cls.contains("gif")||cls.contains("animation")||cls.contains("animated"))gif=true;
             if(p.hasClass("message"))break;
         }
+        // Semantic Telegram class and folder beat physical file extension.
+        if(sticker)return "sticker";
         if("video".equals(base))return round?"round":gif?"gif":"video";
         if("audio".equals(base))return voice?"voice":"audio";
         if("image".equals(base)&&gif)return "gif";
-        if(sticker)return "sticker";
         return base;
     }
     static boolean supported(String path){
