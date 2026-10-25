@@ -22,7 +22,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"' 
       - name: Build from real source tree and run JVM suite
         run: gradle testCompactQaUnitTest assembleCompactQa assembleCompactQaAndroidTest --no-daemon --stacktrace
       - name: Enable KVM
@@ -36,7 +36,9 @@ jobs:
           arch: x86_64
           target: default
           disable-animations: true
-          script: gradle connectedCompactQaAndroidTest --no-daemon --stacktrace
+          script: |
+            mkdir -p qa-output
+            gradle connectedCompactQaAndroidTest --no-daemon --stacktrace; result=$?; adb pull /sdcard/Android/data/org.openarchive.telegram.qa.preview47/files/qa-screens qa-output/screens || true; exit $result
       - name: Validate deliverable
         if: always()
         run: |

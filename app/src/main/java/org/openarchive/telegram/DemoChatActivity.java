@@ -52,6 +52,10 @@ public final class DemoChatActivity extends Activity {
     private long activeAudioId=-1;
     private boolean audioPrepared;
     private Dialog videoDialog;
+    private android.media.AudioManager audio;
+    private final android.media.AudioManager.OnAudioFocusChangeListener focus=change->{if(change<0)audioUi.post(()->{if(player!=null&&audioPrepared)try{player.pause();}catch(Exception ignored){}});};
+    private boolean requestSound(){return audio==null||audio.requestAudioFocus(focus,android.media.AudioManager.STREAM_MUSIC,android.media.AudioManager.AUDIOFOCUS_GAIN)==android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED;}
+
     private int px(float dp){return (int)(getResources().getDisplayMetrics().density*dp+0.5f);}
     private GradientDrawable bg(int color,int radius){
         GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(px(radius));return d;
@@ -65,7 +69,7 @@ public final class DemoChatActivity extends Activity {
         Button b=new Button(this);b.setText(s);b.setTextColor(FG);b.setAllCaps(false);
         b.setBackground(bg(0xff255978,16));return b;
     }
-    @Override public void onCreate(Bundle state){super.onCreate(state);FontStyler.bind(this);draw();}
+    @Override public void onCreate(Bundle state){super.onCreate(state);FontStyler.bind(this);audio=(android.media.AudioManager)getSystemService(AUDIO_SERVICE);draw();}
     private void draw(){
         stopAudio();
         LinearLayout root=column();root.setBackgroundColor(BG);setContentView(root);
@@ -304,7 +308,7 @@ public final class DemoChatActivity extends Activity {
         if(player!=null&&audioPrepared&&activeAudioId==item.id){
             try{
                 if(player.isPlaying()){player.pause();if(toggle!=null)toggle.setText("▶");}
-                else{player.start();if(toggle!=null)toggle.setText("Ⅱ");}
+                else if(requestSound()){player.start();if(toggle!=null)toggle.setText("Ⅱ");}
             }catch(Exception e){stopAudio();toast("Ошибка учебного аудио");}
             return;
         }
@@ -317,12 +321,13 @@ public final class DemoChatActivity extends Activity {
                 if(ticket!=audioSerial||p!=player)return;
                 audioPrepared=true;
                 if(seek!=null)seek.setEnabled(true);
-                try{p.start();}catch(Exception ex){stopAudio();toast("Не запускается учебное аудио");return;}
+                try{if(requestSound())p.start();else{stopAudio();toast("Звук занят другим приложением");return;}}catch(Exception ex){stopAudio();toast("Не запускается учебное аудио");return;}
                 if(toggle!=null)toggle.setText("Ⅱ");
                 audioTicker=new Runnable(){@Override public void run(){
                     if(ticket!=audioSerial||p!=player||!audioPrepared)return;
                     try{
                         int length=Math.max(1,p.getDuration()),pos=Math.max(0,p.getCurrentPosition());
+                        if(toggle!=null){toggle.setText(p.isPlaying()?"Ⅱ":"▶");toggle.setContentDescription(p.isPlaying()?"Пауза":"Воспроизвести");}
                         if(time!=null)time.setText(audioTime(pos)+" / "+audioTime(length));
                         if(seek!=null&&!seek.isPressed())seek.setProgress((int)(1000L*pos/length));
                         audioUi.postDelayed(this,400);
@@ -346,6 +351,7 @@ public final class DemoChatActivity extends Activity {
     }
     private void stopAudio(){
         audioSerial++;audioPrepared=false;activeAudioId=-1;
+        if(audio!=null)audio.abandonAudioFocus(focus);
         if(audioTicker!=null){audioUi.removeCallbacks(audioTicker);audioTicker=null;}
         if(player!=null){
             MediaPlayer old=player;player=null;
@@ -353,5 +359,6 @@ public final class DemoChatActivity extends Activity {
             try{old.release();}catch(Exception ignored){}
         }
     }
+    @Override protected void onPause(){super.onPause();stopAudio();}
     @Override protected void onStop(){super.onStop();stopAudio();if(videoDialog!=null){videoDialog.dismiss();videoDialog=null;}}
 }
