@@ -22,6 +22,10 @@ jobs:
           grep -q "versionName '0.47'" app/build.gradle
           test -s app/src/main/java/org/openarchive/telegram/OfflineSynonymSearch.java
           test -s app/src/test/java/org/openarchive/telegram/OfflineSynonymSearchTest.java
+          # AlertDialog.Builder fluent methods return the Android base Builder type.
+          # Apply the reviewed, one-line QA compile correction after unpacking.
+          sed -i 's/FontDialog.Builder foundDialog=new FontDialog.Builder(this).setTitle/AlertDialog.Builder foundDialog=new FontDialog.Builder(this).setTitle/' app/src/main/java/org/openarchive/telegram/MainActivity.java
+          grep -q 'AlertDialog.Builder foundDialog=' app/src/main/java/org/openarchive/telegram/MainActivity.java
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
