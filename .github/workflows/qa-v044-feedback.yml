@@ -70,7 +70,7 @@ jobs:
           echo '68eaff543471a010912a665257b84c49ffd60d5e0cf82c2dcb10f614eb178261  /tmp/v044.patch.gz' | sha256sum -c -
           # The CI-generated build.gradle has different dependency ordering than the local archive.
           # Apply all Java/documentation diffs, then bump the Gradle version explicitly.
-          gzip -dc /tmp/v044.patch.gz | sed -n '/^--- a\\/app\\/src\\/main\\/java\\/org\\/openarchive\\/telegram\\/MainActivity.java$/,$p' | patch -p1 --batch --forward
+          gzip -dc /tmp/v044.patch.gz | sed -n '/^--- a.app.src.main.java.org.openarchive.telegram.MainActivity.java$/,$p' | patch -p1 --batch --forward
           sed -i "s/versionCode 43/versionCode 44/; s/versionName '0.43'/versionName '0.44'/; s/applicationIdSuffix '.preview43'/applicationIdSuffix '.preview44'/" app/build.gradle
           grep -q 'versionCode 44' app/build.gradle
           grep -q "versionName '0.44'" app/build.gradle
