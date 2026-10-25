@@ -85,7 +85,7 @@ jobs:
           echo '5ced2d632a74b431b3b3510e307bc89ca970fa1de367d52e18caa8d891ff0b8e  /tmp/v045_music.tar.gz' | sha256sum -c -
           tar -xzf /tmp/v045_music.tar.gz
           patch -p1 --batch --forward < music.patch
-          sed -i "s/versionCode 44/versionCode 45/; s/versionName '0.44'/versionName '0.45'/; s/applicationIdSuffix '.preview45'/applicationIdSuffix '.preview45'/" app/build.gradle
+          sed -i "s/versionCode 44/versionCode 45/; s/versionName '0.44'/versionName '0.45'/; s/applicationIdSuffix '.preview44'/applicationIdSuffix '.preview45'/" app/build.gradle
           grep -q 'versionCode 45' app/build.gradle
           grep -q "versionName '0.45'" app/build.gradle
           grep -q "applicationIdSuffix '.preview45'" app/build.gradle
