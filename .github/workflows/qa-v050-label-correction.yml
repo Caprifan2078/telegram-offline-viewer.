@@ -1,0 +1,67 @@
+name: Telegram Archive 0.50 - correct visible app label
+on:
+  push:
+    branches: [qa/v050-correct-app-label-20261026]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore independently tested 0.50 source and fix display label
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d .qa/v050-source.b64 > /tmp/source.tar.xz
+          echo 'b04a679d63fdf1e9f0cf70bb6e37af84057431aa23c3898eff21079eee4ef6e9  /tmp/source.tar.xz' | sha256sum -c -
+          rm -rf app qa
+          tar -xJf /tmp/source.tar.xz
+          grep -q "versionName '0.50'" app/build.gradle
+          grep -q 'versionCode 50' app/build.gradle
+          grep -q 'android:label="Telegram Archive 0.46"' app/src/main/AndroidManifest.xml
+          sed -i 's/android:label="Telegram Archive 0.46"/android:label="Telegram Archive 0.50"/' app/src/main/AndroidManifest.xml
+          grep -q 'android:label="Telegram Archive 0.50"' app/src/main/AndroidManifest.xml
+          ! grep -q 'android:label="Telegram Archive 0.46"' app/src/main/AndroidManifest.xml
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Assemble corrected signed QA APK and all unit tests
+        run: gradle assembleCompactQa testCompactQaUnitTest --no-daemon --stacktrace
+      - name: Strict label, package, version and offline permission checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p qa-output
+          cp app/build/outputs/apk/compactQa/app-compactQa.apk qa-output/TelegramArchive_0.50_CORRECT_LABEL.apk
+          apk="qa-output/TelegramArchive_0.50_CORRECT_LABEL.apk"
+          unzip -t "$apk" | tail -1
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" > qa-output/APK_BADGING.txt
+          cat qa-output/APK_BADGING.txt | head -15
+          grep -q "package: name='org.openarchive.telegram.qa.preview50'" qa-output/APK_BADGING.txt
+          grep -q "versionName='0.50'" qa-output/APK_BADGING.txt
+          grep -q "application-label:'Telegram Archive 0.50'" qa-output/APK_BADGING.txt
+          ! grep -q "application-label:'Telegram Archive 0.46'" qa-output/APK_BADGING.txt
+          ! grep -q "uses-permission: name='android.permission.INTERNET'" qa-output/APK_BADGING.txt
+          sha256sum "$apk" > qa-output/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: TelegramArchive-0.50-Correct-Label
+          if-no-files-found: warn
+          path: |
+            qa-output/
+            app/build/test-results/testCompactQaUnitTest/
