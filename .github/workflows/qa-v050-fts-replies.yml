@@ -1,0 +1,112 @@
+name: Telegram Archive 0.50 - million FTS and Reply QA
+on:
+  push:
+    branches: [qa/v050-fts-replies-20261026]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore source snapshot by SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d .qa/v050-source.b64 > /tmp/source.tar.xz
+          echo '31cbb81dac84cbad33607b37db7c85d70dbfe81469eeb5908a1e6547efb277d8  /tmp/source.tar.xz' | sha256sum -c -
+          rm -rf app qa
+          tar -xJf /tmp/source.tar.xz
+          grep -q 'versionCode 50' app/build.gradle
+          grep -q "versionName '0.50'" app/build.gradle
+          grep -q "applicationIdSuffix '.preview50'" app/build.gradle
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Android SDK 35
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Strict Telegram Reply + FTS tests
+        run: |
+          set -euo pipefail
+          python3 qa/host_tests/test_reply050.py
+          python3 qa/host_tests/test_search049_sqlite.py
+          python3 qa/host_tests/stress_mega_archive050.py --messages 1000000 --parts 100 --media-gb 6
+      - name: Android build and JVM regression
+        run: gradle assembleCompactQa testCompactQaUnitTest --no-daemon --stacktrace
+      - name: Check APK package and offline permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p qa-output
+          cp app/build/outputs/apk/compactQa/app-compactQa.apk qa-output/TelegramArchive_0.50.apk
+          aapt="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          unzip -t qa-output/TelegramArchive_0.50.apk | tail -1
+          "$aapt" dump badging qa-output/TelegramArchive_0.50.apk | tee qa-output/APK_BADGING.txt
+          grep -q "package: name='org.openarchive.telegram.qa.preview50'" qa-output/APK_BADGING.txt
+          grep -q "versionName='0.50'" qa-output/APK_BADGING.txt
+          if grep -q "uses-permission: name='android.permission.INTERNET'" qa-output/APK_BADGING.txt; then exit 1; fi
+          sha256sum qa-output/TelegramArchive_0.50.apk > qa-output/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: TelegramArchive-050-APK-and-JVM
+          path: |
+            qa-output/
+            app/build/test-results/testCompactQaUnitTest/
+            MEGA_STRESS_RESULTS.json
+          if-no-files-found: warn
+  device:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore identical source
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d .qa/v050-source.b64 > /tmp/source.tar.xz
+          echo '31cbb81dac84cbad33607b37db7c85d70dbfe81469eeb5908a1e6547efb277d8  /tmp/source.tar.xz' | sha256sum -c -
+          rm -rf app qa
+          tar -xJf /tmp/source.tar.xz
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Android SDK 35
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Android 9 reply links and database migration
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 28
+          arch: x86_64
+          target: google_apis
+          profile: pixel_2
+          ram-size: 3072M
+          disk-size: 6144M
+          disable-animations: true
+          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: gradle connectedCompactQaAndroidTest --no-daemon --stacktrace '-Pandroid.testInstrumentationRunnerArguments.class=org.openarchive.telegram.TelegramReplyIntegrationTest'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: TelegramArchive-050-Android-device-evidence
+          path: |
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+          if-no-files-found: warn
