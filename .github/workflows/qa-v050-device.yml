@@ -1,0 +1,53 @@
+name: Telegram Archive 0.50 Android reply integration QA
+on:
+  push:
+    branches: [qa/v050-device-test-20261026]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  device:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore identical source
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d .qa/v050-source.b64 > /tmp/source.tar.xz
+          echo 'b04a679d63fdf1e9f0cf70bb6e37af84057431aa23c3898eff21079eee4ef6e9  /tmp/source.tar.xz' | sha256sum -c -
+          rm -rf app qa
+          tar -xJf /tmp/source.tar.xz
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Android SDK 35
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Android 9 reply links and database migration
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 28
+          arch: x86_64
+          target: google_apis
+          profile: pixel_2
+          ram-size: 3072M
+          disk-size: 6144M
+          disable-animations: true
+          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: gradle connectedDebugAndroidTest --no-daemon --stacktrace '-Pandroid.testInstrumentationRunnerArguments.class=org.openarchive.telegram.TelegramReplyIntegrationTest'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: TelegramArchive-050-Android-device-evidence
+          path: |
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+          if-no-files-found: warn
