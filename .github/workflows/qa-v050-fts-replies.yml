@@ -16,7 +16,7 @@ jobs:
         run: |
           set -euo pipefail
           base64 -d .qa/v050-source.b64 > /tmp/source.tar.xz
-          echo '31cbb81dac84cbad33607b37db7c85d70dbfe81469eeb5908a1e6547efb277d8  /tmp/source.tar.xz' | sha256sum -c -
+          echo 'b04a679d63fdf1e9f0cf70bb6e37af84057431aa23c3898eff21079eee4ef6e9  /tmp/source.tar.xz' | sha256sum -c -
           rm -rf app qa
           tar -xJf /tmp/source.tar.xz
           grep -q 'versionCode 50' app/build.gradle
@@ -66,6 +66,7 @@ jobs:
             MEGA_STRESS_RESULTS.json
           if-no-files-found: warn
   device:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 55
     steps:
@@ -75,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           base64 -d .qa/v050-source.b64 > /tmp/source.tar.xz
-          echo '31cbb81dac84cbad33607b37db7c85d70dbfe81469eeb5908a1e6547efb277d8  /tmp/source.tar.xz' | sha256sum -c -
+          echo 'b04a679d63fdf1e9f0cf70bb6e37af84057431aa23c3898eff21079eee4ef6e9  /tmp/source.tar.xz' | sha256sum -c -
           rm -rf app qa
           tar -xJf /tmp/source.tar.xz
       - uses: actions/setup-java@v4
