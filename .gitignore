@@ -50,3 +50,10 @@ Telegram Desktop/
 *.pcap
 *.pcapng
 *.log
+
+# Do not commit private QA export bundles or local archive snapshots
+.qa/*.tar.xz
+.qa/*.tar.gz
+.qa/*.zip
+.qa/*.7z
+.qa/*.rar
